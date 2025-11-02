@@ -6,54 +6,31 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import {
-  Sidebar,
-  SidebarContent,
-  SidebarFooter,
-  SidebarHeader,
-  SidebarInset,
-  SidebarMenu,
-  SidebarMenuButton,
-  SidebarMenuItem,
-  SidebarProvider,
-  SidebarTrigger,
-  useSidebar,
-} from "@/components/ui/sidebar";
-import { APP_LOGO, APP_TITLE, getLoginUrl } from "@/const";
+import { APP_TITLE, getLoginUrl } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
-import { LayoutDashboard, LogOut, PanelLeft, Users, BarChart3 } from "lucide-react";
-import { CSSProperties, useEffect, useRef, useState } from "react";
+import { LayoutDashboard, LogOut, Users, BarChart3, ClipboardList, Upload, FileText } from "lucide-react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
 import { Button } from "./ui/button";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./ui/tooltip";
 
 const menuItems = [
-  { icon: BarChart3, label: "Dashboard", path: "/dashboard" },
-  { icon: LayoutDashboard, label: "Importar Produtos", path: "/import" },
-  { icon: Users, label: "Lançamento de Produção", path: "/production" },
-  { icon: LayoutDashboard, label: "Relatório Diário", path: "/report" },
-  { icon: Users, label: "Consulta de Produtos", path: "/products" },
+  { icon: LayoutDashboard, label: "Dashboard", path: "/dashboard", adminOnly: false },
+  { icon: ClipboardList, label: "Lançamento de Produção", path: "/production", adminOnly: false },
+  { icon: BarChart3, label: "Relatório Diário", path: "/report", adminOnly: false },
+  { icon: LayoutDashboard, label: "Consulta de Produtos", path: "/products", adminOnly: false },
+  { icon: Upload, label: "Importar Produtos", path: "/import", adminOnly: false },
+  { icon: Users, label: "Usuários", path: "/users", adminOnly: true },
+  { icon: FileText, label: "Logs de Auditoria", path: "/audit-logs", adminOnly: true },
 ];
-
-const SIDEBAR_WIDTH_KEY = "sidebar-width";
-const DEFAULT_WIDTH = 280;
-const MIN_WIDTH = 200;
-const MAX_WIDTH = 480;
 
 export default function DashboardLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  const [sidebarWidth, setSidebarWidth] = useState(() => {
-    const saved = localStorage.getItem(SIDEBAR_WIDTH_KEY);
-    return saved ? parseInt(saved, 10) : DEFAULT_WIDTH;
-  });
   const { loading, user } = useAuth();
-
-  useEffect(() => {
-    localStorage.setItem(SIDEBAR_WIDTH_KEY, sidebarWidth.toString());
-  }, [sidebarWidth]);
+  const [location, setLocation] = useLocation();
 
   if (loading) {
     return <DashboardLayoutSkeleton />
@@ -69,9 +46,9 @@ export default function DashboardLayout({
             <div className="relative group">
               <div className="relative">
                 <img
-                  src={APP_LOGO}
+                  src="/logo-nobre.png"
                   alt={APP_TITLE}
-                  className="h-20 w-20 rounded-xl object-cover shadow"
+                  className="h-24 w-24 rounded-xl object-cover shadow"
                 />
               </div>
             </div>
@@ -96,201 +73,141 @@ export default function DashboardLayout({
     );
   }
 
-  return (
-    <SidebarProvider
-      style={
-        {
-          "--sidebar-width": `${sidebarWidth}px`,
-        } as CSSProperties
-      }
-    >
-      <DashboardLayoutContent setSidebarWidth={setSidebarWidth}>
-        {children}
-      </DashboardLayoutContent>
-    </SidebarProvider>
-  );
+  if (!user && !loginUrl) {
+    if (location !== "/login") {
+      setLocation("/login");
+    }
+    return <DashboardLayoutSkeleton />;
+  }
+
+  return <DashboardLayoutContent>{children}</DashboardLayoutContent>;
 }
 
 type DashboardLayoutContentProps = {
   children: React.ReactNode;
-  setSidebarWidth: (width: number) => void;
 };
 
 function DashboardLayoutContent({
   children,
-  setSidebarWidth,
 }: DashboardLayoutContentProps) {
   const { user, logout } = useAuth();
   const displayUser = user || { name: "Usuário", email: "usuario@sistema.com" };
   const [location, setLocation] = useLocation();
-  const { state, toggleSidebar } = useSidebar();
-  const isCollapsed = state === "collapsed";
-  const [isResizing, setIsResizing] = useState(false);
-  const sidebarRef = useRef<HTMLDivElement>(null);
-  const activeMenuItem = menuItems.find(item => item.path === location);
   const isMobile = useIsMobile();
+  const accessibleMenuItems = menuItems.filter(
+    item => !item.adminOnly || (user && "role" in user && user.role === "admin")
+  );
+  const activeMenuItem = menuItems.find(item => item.path === location);
 
-  useEffect(() => {
-    if (isCollapsed) {
-      setIsResizing(false);
-    }
-  }, [isCollapsed]);
+  const navigateTo = (path: string) => {
+    setLocation(path);
+  };
 
-  useEffect(() => {
-    const handleMouseMove = (e: MouseEvent) => {
-      if (!isResizing) return;
+  const renderMenuButtons = (options?: { inactiveVariant?: "ghost" | "outline"; className?: string }) =>
+    accessibleMenuItems.map(item => {
+      const isActive = location === item.path;
+      const inactiveVariant = options?.inactiveVariant ?? "ghost";
+      const button = (
+        <Button
+          key={item.path}
+          variant={isActive ? "default" : inactiveVariant}
+          size="icon"
+          onClick={() => navigateTo(item.path)}
+          title={item.label}
+          aria-label={item.label}
+          className={`${isActive ? "shadow" : ""} ${options?.className ?? ""}`.trim()}
+        >
+          <item.icon className="h-4 w-4" />
+        </Button>
+      );
 
-      const sidebarLeft = sidebarRef.current?.getBoundingClientRect().left ?? 0;
-      const newWidth = e.clientX - sidebarLeft;
-      if (newWidth >= MIN_WIDTH && newWidth <= MAX_WIDTH) {
-        setSidebarWidth(newWidth);
-      }
-    };
+      return options?.inactiveVariant === "outline" ? (
+        button
+      ) : (
+        <Tooltip key={item.path}>
+          <TooltipTrigger asChild>{button}</TooltipTrigger>
+          <TooltipContent side="bottom">{item.label}</TooltipContent>
+        </Tooltip>
+      );
+    });
 
-    const handleMouseUp = () => {
-      setIsResizing(false);
-    };
+  const renderUserDropdown = (mode: "desktop" | "mobile") => {
+    const showDetails = mode === "desktop" ? "hidden lg:flex" : "flex";
+    const buttonPadding = mode === "desktop" ? "px-3 py-1.5" : "px-3 py-1.5";
+    const gap = mode === "desktop" ? "gap-3" : "gap-2";
+    const avatarSize = mode === "desktop" ? "h-8 w-8" : "h-8 w-8";
+    const containerClasses = mode === "desktop"
+      ? "flex items-center gap-3 rounded-full border px-3 py-1.5 hover:bg-accent transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      : `flex items-center ${gap} rounded-full border ${buttonPadding} hover:bg-accent transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring`;
+    const detailsClasses = `${showDetails} flex-col items-start text-left`;
 
-    if (isResizing) {
-      document.addEventListener("mousemove", handleMouseMove);
-      document.addEventListener("mouseup", handleMouseUp);
-      document.body.style.cursor = "col-resize";
-      document.body.style.userSelect = "none";
-    }
+    return (
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button className={containerClasses}>
+            <Avatar className={`${avatarSize} border`}>
+              <AvatarFallback className="text-xs font-medium">
+                {displayUser?.name?.charAt(0).toUpperCase()}
+              </AvatarFallback>
+            </Avatar>
+            <div className={detailsClasses}>
+              <span className="text-sm font-medium leading-none">
+                {displayUser?.name || "-"}
+              </span>
+              <span className="text-xs text-muted-foreground leading-none">
+                {displayUser?.email || "-"}
+              </span>
+            </div>
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-48">
+          <DropdownMenuItem
+            onClick={logout}
+            className="cursor-pointer text-destructive focus:text-destructive"
+          >
+            <LogOut className="mr-2 h-4 w-4" />
+            <span>Sign out</span>
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    );
+  };
 
-    return () => {
-      document.removeEventListener("mousemove", handleMouseMove);
-      document.removeEventListener("mouseup", handleMouseUp);
-      document.body.style.cursor = "";
-      document.body.style.userSelect = "";
-    };
-  }, [isResizing, setSidebarWidth]);
+  const DesktopHeader = () => (
+    <header className="hidden md:grid grid-cols-[1fr_auto_1fr] items-center border-b bg-background/95 px-6 py-4">
+      <div className="flex items-center gap-3 min-w-0">
+        <span className="text-lg font-semibold tracking-tight truncate">
+          {activeMenuItem?.label ?? APP_TITLE}
+        </span>
+      </div>
+      <div className="flex justify-center">
+        <img src="/logo-nobre.png" alt={APP_TITLE} className="h-14 object-contain" />
+      </div>
+      <TooltipProvider>
+        <div className="flex items-center justify-end gap-2">
+          {renderMenuButtons()}
+          {renderUserDropdown("desktop")}
+        </div>
+      </TooltipProvider>
+    </header>
+  );
+
+  const MobileHeader = () => (
+    <header className="md:hidden border-b bg-background/95 px-3 py-3 space-y-3 sticky top-0 z-40">
+      <div className="flex items-center justify-between gap-3">
+        <img src="/logo-nobre.png" alt={APP_TITLE} className="h-12 object-contain" />
+        {renderUserDropdown("mobile")}
+      </div>
+      <div className="flex flex-wrap items-center justify-center gap-2">
+        {renderMenuButtons({ inactiveVariant: "outline", className: "h-12 w-12" })}
+      </div>
+    </header>
+  );
 
   return (
-    <>
-      <div className="relative" ref={sidebarRef}>
-        <Sidebar
-          collapsible="icon"
-          className="border-r-0"
-          disableTransition={isResizing}
-        >
-          <SidebarHeader className="h-16 justify-center border-b">
-            <div className="flex items-center gap-3 pl-2 group-data-[collapsible=icon]:px-0 transition-all w-full">
-              {isCollapsed ? (
-                <div className="relative h-8 w-8 shrink-0 group">
-                  <img
-                    src="/logo-nobre.png"
-                    className="h-8 w-8 object-contain"
-                    alt="Logo NOBRE"
-                  />
-                  <button
-                    onClick={toggleSidebar}
-                    className="absolute inset-0 flex items-center justify-center bg-accent rounded-md ring-1 ring-border opacity-0 group-hover:opacity-100 transition-opacity focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  >
-                    <PanelLeft className="h-4 w-4 text-foreground" />
-                  </button>
-                </div>
-              ) : (
-                <>
-                  <div className="flex items-center gap-3 min-w-0">
-                    <img
-                      src="/logo-nobre.png"
-                      className="h-10 object-contain shrink-0"
-                      alt="Logo NOBRE"
-                    />
-                  </div>
-                  <button
-                    onClick={toggleSidebar}
-                    className="ml-auto h-8 w-8 flex items-center justify-center hover:bg-accent rounded-lg transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring shrink-0"
-                  >
-                    <PanelLeft className="h-4 w-4 text-muted-foreground" />
-                  </button>
-                </>
-              )}
-            </div>
-          </SidebarHeader>
-
-          <SidebarContent className="gap-0">
-            <SidebarMenu className="px-2 py-1">
-              {menuItems.map(item => {
-                const isActive = location === item.path;
-                return (
-                  <SidebarMenuItem key={item.path}>
-                    <SidebarMenuButton
-                      isActive={isActive}
-                      onClick={() => setLocation(item.path)}
-                      tooltip={item.label}
-                      className={`h-10 transition-all font-normal`}
-                    >
-                      <item.icon
-                        className={`h-4 w-4 ${isActive ? "text-primary" : ""}`}
-                      />
-                      <span>{item.label}</span>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                );
-              })}
-            </SidebarMenu>
-          </SidebarContent>
-
-          <SidebarFooter className="p-3">
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <button className="flex items-center gap-3 rounded-lg px-1 py-1 hover:bg-accent/50 transition-colors w-full text-left group-data-[collapsible=icon]:justify-center focus:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-                  <Avatar className="h-9 w-9 border shrink-0">
-                    <AvatarFallback className="text-xs font-medium">
-                      {displayUser?.name?.charAt(0).toUpperCase()}
-                    </AvatarFallback>
-                  </Avatar>
-                  <div className="flex-1 min-w-0 group-data-[collapsible=icon]:hidden">
-                    <p className="text-sm font-medium truncate leading-none">
-                      {displayUser?.name || "-"}
-                    </p>
-                    <p className="text-xs text-muted-foreground truncate mt-1.5">
-                      {displayUser?.email || "-"}
-                    </p>
-                  </div>
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-48">
-                <DropdownMenuItem
-                  onClick={logout}
-                  className="cursor-pointer text-destructive focus:text-destructive"
-                >
-                  <LogOut className="mr-2 h-4 w-4" />
-                  <span>Sign out</span>
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </SidebarFooter>
-        </Sidebar>
-        <div
-          className={`absolute top-0 right-0 w-1 h-full cursor-col-resize hover:bg-primary/20 transition-colors ${isCollapsed ? "hidden" : ""}`}
-          onMouseDown={() => {
-            if (isCollapsed) return;
-            setIsResizing(true);
-          }}
-          style={{ zIndex: 50 }}
-        />
-      </div>
-
-      <SidebarInset>
-        {isMobile && (
-          <div className="flex border-b h-14 items-center justify-between bg-background/95 px-2 backdrop-blur supports-[backdrop-filter]:backdrop-blur sticky top-0 z-40">
-            <div className="flex items-center gap-2">
-              <SidebarTrigger className="h-9 w-9 rounded-lg bg-background" />
-              <div className="flex items-center gap-3">
-                <div className="flex flex-col gap-1">
-                  <span className="tracking-tight text-foreground">
-                    {activeMenuItem?.label ?? APP_TITLE}
-                  </span>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-        <main className="flex-1 p-4">{children}</main>
-      </SidebarInset>
-    </>
+    <div className="min-h-screen flex flex-col bg-background">
+      {isMobile ? <MobileHeader /> : <DesktopHeader />}
+      <main className="flex-1 p-4">{children}</main>
+    </div>
   );
 }

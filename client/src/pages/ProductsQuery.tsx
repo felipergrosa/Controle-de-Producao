@@ -17,20 +17,29 @@ export default function ProductsQuery() {
   // Search both code and description
   const searchResults = trpc.products.search.useQuery(
     { query: searchQuery },
-    { enabled: searchQuery.length >= 2 }
+    { 
+      enabled: searchQuery.length >= 2,
+      staleTime: 30000, // Cache por 30 segundos
+    }
   );
 
   const searchByDesc = trpc.products.searchByDescription.useQuery(
     { query: searchQuery },
-    { enabled: searchQuery.length >= 2 }
+    { 
+      enabled: searchQuery.length >= 2,
+      staleTime: 30000, // Cache por 30 segundos
+    }
   );
+
+  const utils = trpc.useUtils();
 
   const deleteProductMutation = trpc.products.delete.useMutation({
     onSuccess: () => {
       toast.success("Produto deletado com sucesso");
       setSelectedProduct(null);
-      searchResults.refetch();
-      searchByDesc.refetch();
+      // Invalidar queries ao invés de refetch direto
+      utils.products.search.invalidate();
+      utils.products.searchByDescription.invalidate();
     },
     onError: (error: any) => {
       toast.error(error.message || "Erro ao deletar produto");
@@ -42,8 +51,9 @@ export default function ProductsQuery() {
       toast.success("Produto atualizado com sucesso");
       setShowEditModal(false);
       setEditingProduct(null);
-      searchResults.refetch();
-      searchByDesc.refetch();
+      // Invalidar queries ao invés de refetch direto
+      utils.products.search.invalidate();
+      utils.products.searchByDescription.invalidate();
     },
     onError: (error: any) => {
       toast.error(error.message || "Erro ao atualizar produto");
@@ -87,6 +97,7 @@ export default function ProductsQuery() {
       code: editingProduct.code,
       description: editingProduct.description.toUpperCase(),
       photoUrl: editingProduct.photoUrl,
+      barcode: editingProduct.barcode?.trim() || null,
     });
   };
 
@@ -264,6 +275,15 @@ export default function ProductsQuery() {
                 value={editingProduct?.description || ""}
                 onChange={(e) =>
                   setEditingProduct({ ...editingProduct, description: e.target.value })
+                }
+              />
+            </div>
+            <div>
+              <label className="text-sm font-medium">Código de Barras</label>
+              <Input
+                value={editingProduct?.barcode || ""}
+                onChange={(e) =>
+                  setEditingProduct({ ...editingProduct, barcode: e.target.value })
                 }
               />
             </div>

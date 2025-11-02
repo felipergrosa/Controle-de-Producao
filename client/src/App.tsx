@@ -11,11 +11,15 @@ import ImportProducts from "./pages/ImportProducts";
 import ProductionEntry from "./pages/ProductionEntry";
 import ProductionReport from "./pages/ProductionReport";
 import ProductsQuery from "./pages/ProductsQuery";
+import AuditLogs from "./pages/AuditLogs";
+import Login from "./pages/Login";
+import Users from "./pages/Users";
 
 function Router() {
   return (
     <Switch>
       <Route path={"/"} component={Home} />
+      <Route path={"/login"} component={Login} />
       <Route path={"/dashboard"}>
         {() => (
           <DashboardLayout>
@@ -48,6 +52,20 @@ function Router() {
         {() => (
           <DashboardLayout>
             <ProductsQuery />
+          </DashboardLayout>
+        )}
+      </Route>
+      <Route path={"/audit-logs"}>
+        {() => (
+          <DashboardLayout>
+            <AuditLogs />
+          </DashboardLayout>
+        )}
+      </Route>
+      <Route path={"/users"}>
+        {() => (
+          <DashboardLayout>
+            <Users />
           </DashboardLayout>
         )}
       </Route>

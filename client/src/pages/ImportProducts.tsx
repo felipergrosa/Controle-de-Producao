@@ -19,10 +19,19 @@ interface ParsedProduct {
 }
 
 interface ColumnMapping {
-  code: number;
-  description: number;
+  code?: number;
+  description?: number;
   barcode?: number;
   photoUrl?: number;
+}
+
+interface ImportResult {
+  inserted: number;
+  updated: number;
+  errors: number;
+  processed: number;
+  total: number;
+  processing: boolean;
 }
 
 export default function ImportProducts() {
@@ -32,7 +41,7 @@ export default function ImportProducts() {
   const [showMapping, setShowMapping] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
-  const [importResult, setImportResult] = useState<any>(null);
+  const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const [sheetHeaders, setSheetHeaders] = useState<string[]>([]);
   const [previewData, setPreviewData] = useState<any[]>([]);
   const [newProduct, setNewProduct] = useState({ code: "", description: "", barcode: "", photoUrl: "" });
@@ -82,9 +91,19 @@ export default function ImportProducts() {
   };
 
   const handleMappingSubmit = async () => {
-    if (!columnMapping || !file) return;
+    if (!file || !columnMapping || columnMapping.code === undefined || columnMapping.description === undefined) {
+      toast.error("Mapeie as colunas obrigatórias antes de importar");
+      return;
+    }
+
+    const codeIdx = columnMapping.code;
+    const descriptionIdx = columnMapping.description;
+    const barcodeIdx = columnMapping.barcode;
+    const photoIdx = columnMapping.photoUrl;
 
     setIsImporting(true);
+    setShowMapping(false);
+    setImportResult({ inserted: 0, updated: 0, errors: 0, processed: 0, total: 0, processing: true });
     try {
       const reader = new FileReader();
       reader.onload = async (e) => {
@@ -96,17 +115,28 @@ export default function ImportProducts() {
         let inserted = 0;
         let updated = 0;
         let errors = 0;
+        let processed = 0;
+
+        const total = Math.max(rows.length - 1, 0);
+        setImportResult((prev) =>
+          prev ? { ...prev, total } : { inserted: 0, updated: 0, errors: 0, processed: 0, total, processing: true }
+        );
 
         for (let i = 1; i < rows.length; i++) {
           const row = rows[i];
           try {
-            const code = row[columnMapping.code]?.toString().trim();
-            const description = row[columnMapping.description]?.toString().trim().toUpperCase();
-            // barcode field is not used in this version
-            const photoUrl = columnMapping.photoUrl !== undefined ? row[columnMapping.photoUrl]?.toString().trim() : undefined;
+            const code = row[codeIdx]?.toString().trim();
+            const description = row[descriptionIdx]?.toString().trim().toUpperCase();
+            const barcode =
+              barcodeIdx !== undefined ? row[barcodeIdx]?.toString().trim() || undefined : undefined;
+            const photoUrl = photoIdx !== undefined ? row[photoIdx]?.toString().trim() : undefined;
 
             if (!code || !description) {
               errors++;
+              processed++;
+              setImportResult((prev) =>
+                prev ? { ...prev, inserted, updated, errors, processed } : prev
+              );
               continue;
             }
 
@@ -116,6 +146,7 @@ export default function ImportProducts() {
                 code,
                 description,
                 photoUrl,
+                barcode,
               });
               inserted++;
             } catch (err) {
@@ -124,11 +155,16 @@ export default function ImportProducts() {
           } catch (error) {
             errors++;
           }
+          processed++;
+          setImportResult((prev) =>
+            prev ? { ...prev, inserted, updated, errors, processed } : prev
+          );
         }
 
-        setImportResult({ inserted, updated, errors, total: rows.length - 1 });
+        setImportResult((prev) =>
+          prev ? { ...prev, inserted, updated, errors, processed, total, processing: false } : null
+        );
         setIsImporting(false);
-        setShowMapping(false);
         setFile(null);
         setParsedData([]);
         setColumnMapping(null);
@@ -137,6 +173,7 @@ export default function ImportProducts() {
       reader.readAsArrayBuffer(file);
     } catch (error: any) {
       toast.error(error.message || "Erro ao importar");
+      setImportResult((prev) => (prev ? { ...prev, processing: false } : prev));
       setIsImporting(false);
     }
   };
@@ -229,7 +266,7 @@ export default function ImportProducts() {
 
       {/* Column Mapping Dialog */}
       <Dialog open={showMapping} onOpenChange={setShowMapping}>
-        <DialogContent className="max-w-6xl max-h-[95vh] overflow-y-auto w-full">
+        <DialogContent sizeVariant="full" className="max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Importar em Lote (Excel/CSV)</DialogTitle>
             <DialogDescription>Mapeie as colunas do seu arquivo aos campos do sistema</DialogDescription>
@@ -243,8 +280,13 @@ export default function ImportProducts() {
                 <div>
                   <Label>Código *</Label>
                   <Select
-                    value={columnMapping?.code?.toString() || ""}
-                    onValueChange={(v) => setColumnMapping({ ...columnMapping!, code: parseInt(v) })}
+                    value={columnMapping?.code !== undefined ? columnMapping.code.toString() : ""}
+                    onValueChange={(v) =>
+                      setColumnMapping((prev) => ({
+                        ...(prev ?? {}),
+                        code: parseInt(v, 10),
+                      }))
+                    }
                   >
                     <SelectTrigger>
                       <SelectValue placeholder="Selecione a coluna" />
@@ -261,8 +303,13 @@ export default function ImportProducts() {
                 <div>
                   <Label>Descrição *</Label>
                   <Select
-                    value={columnMapping?.description?.toString() || ""}
-                    onValueChange={(v) => setColumnMapping({ ...columnMapping!, description: parseInt(v) })}
+                    value={columnMapping?.description !== undefined ? columnMapping.description.toString() : ""}
+                    onValueChange={(v) =>
+                      setColumnMapping((prev) => ({
+                        ...(prev ?? {}),
+                        description: parseInt(v, 10),
+                      }))
+                    }
                   >
                     <SelectTrigger>
                       <SelectValue placeholder="Selecione a coluna" />
@@ -279,8 +326,13 @@ export default function ImportProducts() {
                 <div>
                   <Label>Código de Barras</Label>
                   <Select
-                    value={columnMapping?.barcode?.toString() || "-1"}
-                    onValueChange={(v) => setColumnMapping({ ...columnMapping!, barcode: v !== "-1" ? parseInt(v) : undefined })}
+                    value={columnMapping?.barcode !== undefined ? columnMapping.barcode.toString() : "-1"}
+                    onValueChange={(v) =>
+                      setColumnMapping((prev) => ({
+                        ...(prev ?? {}),
+                        barcode: v !== "-1" ? parseInt(v, 10) : undefined,
+                      }))
+                    }
                   >
                     <SelectTrigger>
                       <SelectValue placeholder="Nenhum" />
@@ -298,8 +350,13 @@ export default function ImportProducts() {
                 <div>
                   <Label>Imagem</Label>
                   <Select
-                    value={columnMapping?.photoUrl?.toString() || "-1"}
-                    onValueChange={(v) => setColumnMapping({ ...columnMapping!, photoUrl: v !== "-1" ? parseInt(v) : undefined })}
+                    value={columnMapping?.photoUrl !== undefined ? columnMapping.photoUrl.toString() : "-1"}
+                    onValueChange={(v) =>
+                      setColumnMapping((prev) => ({
+                        ...(prev ?? {}),
+                        photoUrl: v !== "-1" ? parseInt(v, 10) : undefined,
+                      }))
+                    }
                   >
                     <SelectTrigger>
                       <SelectValue placeholder="Nenhum" />
@@ -334,17 +391,22 @@ export default function ImportProducts() {
                     {previewData.map((row, idx) => (
                       <TableRow key={idx}>
                         <TableCell className="font-mono text-sm">
-                          {row[columnMapping?.code || 0]}
+                          {row[columnMapping?.code ?? 0]}
                         </TableCell>
                         <TableCell className="text-sm">
-                          {row[columnMapping?.description || 1]}
+                          {row[columnMapping?.description ?? 1]}
                         </TableCell>
                         <TableCell className="text-sm">
                           {columnMapping?.barcode !== undefined ? row[columnMapping.barcode] : "-"}
                         </TableCell>
                         <TableCell className="text-sm">
                           {columnMapping?.photoUrl !== undefined ? (
-                            <a href={row[columnMapping.photoUrl]} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
+                            <a
+                              href={row[columnMapping.photoUrl] ?? "#"}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-blue-600 hover:underline"
+                            >
                               Link
                             </a>
                           ) : "-"}
@@ -363,7 +425,11 @@ export default function ImportProducts() {
             </Button>
             <Button
               onClick={handleMappingSubmit}
-              disabled={!columnMapping || columnMapping.code === undefined || columnMapping.description === undefined || isImporting}
+              disabled={
+                isImporting ||
+                columnMapping?.code === undefined ||
+                columnMapping?.description === undefined
+              }
             >
               {isImporting ? "Importando..." : "Confirmar Importação"}
             </Button>
@@ -372,15 +438,23 @@ export default function ImportProducts() {
       </Dialog>
 
       {/* Import Result Modal */}
-      <Dialog open={!!importResult} onOpenChange={() => setImportResult(null)}>
+      <Dialog open={!!importResult} onOpenChange={() => !importResult?.processing && setImportResult(null)}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <CheckCircle2 className="text-green-600" size={24} />
-              Importação Concluída
+              <CheckCircle2 className={importResult?.processing ? "text-blue-600" : "text-green-600"} size={24} />
+              {importResult?.processing ? "Importando produtos" : "Importação concluída"}
             </DialogTitle>
+            <DialogDescription>
+              {importResult?.processing
+                ? "Processando arquivo. Este painel é atualizado em tempo real."
+                : "Resumo do processamento do arquivo enviado."}
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
+            <div className="text-sm text-muted-foreground">
+              {importResult?.processed ?? 0} de {importResult?.total ?? 0} linhas processadas
+            </div>
             <div className="grid grid-cols-3 gap-4">
               <Card>
                 <CardContent className="pt-6 text-center">
@@ -403,7 +477,9 @@ export default function ImportProducts() {
             </div>
           </div>
           <DialogFooter>
-            <Button onClick={() => setImportResult(null)}>Fechar</Button>
+            <Button onClick={() => setImportResult(null)} disabled={importResult?.processing}>
+              {importResult?.processing ? "Aguardando..." : "Fechar"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

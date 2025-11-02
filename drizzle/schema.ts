@@ -6,18 +6,16 @@ import { sql } from "drizzle-orm";
  * Extend this file with additional tables as your product grows.
  * Columns use camelCase to match both database fields and generated types.
  */
-/**
- * Core user table backing auth flow.
- * Extend this file with additional tables as your product grows.
- * Columns use camelCase to match both database fields and generated types.
- */
 export const users = mysqlTable("users", {
   id: int("id").autoincrement().primaryKey(),
-  openId: varchar("openId", { length: 64 }).notNull().unique(),
+  openId: varchar("openId", { length: 64 }).unique(), // Opcional para compat OAuth
   name: text("name"),
-  email: varchar("email", { length: 320 }),
+  email: varchar("email", { length: 320 }).notNull().unique(),
+  passwordHash: varchar("password_hash", { length: 255 }), // bcrypt hash
   loginMethod: varchar("loginMethod", { length: 64 }),
   role: mysqlEnum("role", ["user", "admin"]).default("user").notNull(),
+  isActive: boolean("is_active").default(true).notNull(),
+  mustChangePassword: boolean("must_change_password").default(false).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
   lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull(),
@@ -25,6 +23,53 @@ export const users = mysqlTable("users", {
 
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
+
+/**
+ * Sessões de usuário - para autenticação local
+ */
+export const sessions = mysqlTable(
+  "sessions",
+  {
+    id: varchar("id", { length: 36 }).primaryKey().default(sql`(UUID())`),
+    userId: int("user_id").notNull().references(() => users.id),
+    token: varchar("token", { length: 255 }).notNull().unique(),
+    expiresAt: timestamp("expires_at").notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    ipAddress: varchar("ip_address", { length: 45 }),
+    userAgent: text("user_agent"),
+  },
+  (table) => ([
+    uniqueIndex("idx_sessions_token").on(table.token),
+  ])
+);
+
+export type Session = typeof sessions.$inferSelect;
+export type InsertSession = typeof sessions.$inferInsert;
+
+/**
+ * Logs de auditoria - rastreia todas as ações no sistema
+ */
+export const auditLogs = mysqlTable(
+  "audit_logs",
+  {
+    id: varchar("id", { length: 36 }).primaryKey().default(sql`(UUID())`),
+    userId: int("user_id").notNull().references(() => users.id),
+    action: varchar("action", { length: 50 }).notNull(),
+    entity: varchar("entity", { length: 50 }).notNull(),
+    entityId: varchar("entity_id", { length: 36 }),
+    entityCode: varchar("entity_code", { length: 100 }),
+    details: json("details"),
+    ipAddress: varchar("ip_address", { length: 45 }),
+    userAgent: text("user_agent"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => ([
+    uniqueIndex("idx_audit_created").on(table.createdAt),
+  ])
+);
+
+export type AuditLog = typeof auditLogs.$inferSelect;
+export type InsertAuditLog = typeof auditLogs.$inferInsert;
 
 /**
  * Produtos - tabela de catálogo de produtos
@@ -107,7 +152,7 @@ export const productHistory = mysqlTable(
     type: mysqlEnum("type", ["production", "adjustment", "import"]).default("production").notNull(),
     notes: text("notes"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
-    createdBy: varchar("created_by", { length: 64 }),
+    createdBy: int("created_by"), // Consistência: referência a users.id
   },
   (table) => ([
     uniqueIndex("idx_history_product").on(table.productId, table.createdAt),

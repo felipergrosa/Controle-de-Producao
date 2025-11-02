@@ -1,0 +1,73 @@
+-- Migration: [Descrição curta da migration]
+-- Data: YYYY-MM-DD
+-- Autor: [Seu nome]
+-- Descrição detalhada:
+--   [Descreva o que essa migration faz e por quê]
+
+-- ==================================================================
+-- IMPORTANTE: 
+-- 1. Renomeie este arquivo para XXX_descricao.sql (ex: 002_add_profile.sql)
+-- 2. XXX deve ser o próximo número sequencial
+-- 3. Teste em desenvolvimento antes de aplicar em produção
+-- 4. Faça backup antes de migrations destrutivas
+-- ==================================================================
+
+-- Exemplo 1: Adicionar colunas
+-- ALTER TABLE nome_da_tabela 
+--   ADD COLUMN nova_coluna VARCHAR(255) NULL,
+--   ADD COLUMN outra_coluna INT DEFAULT 0;
+
+-- Exemplo 2: Criar tabela
+-- CREATE TABLE IF NOT EXISTS nova_tabela (
+--   id VARCHAR(36) PRIMARY KEY DEFAULT (UUID()),
+--   name VARCHAR(255) NOT NULL,
+--   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+--   INDEX idx_name (name)
+-- ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Exemplo 3: Criar índice
+-- CREATE INDEX idx_coluna ON tabela(coluna);
+
+-- Exemplo 4: Modificar coluna
+-- ALTER TABLE tabela 
+--   MODIFY COLUMN coluna VARCHAR(500) NOT NULL;
+
+-- Exemplo 5: Adicionar chave estrangeira
+-- ALTER TABLE tabela_filha 
+--   ADD CONSTRAINT fk_nome 
+--   FOREIGN KEY (coluna_id) 
+--   REFERENCES tabela_pai(id) 
+--   ON DELETE CASCADE;
+
+-- Exemplo 6: Inserir dados iniciais
+-- INSERT INTO tabela (coluna1, coluna2) VALUES
+--   ('valor1', 'valor2'),
+--   ('valor3', 'valor4');
+
+-- Exemplo 7: Atualizar dados existentes
+-- UPDATE tabela 
+--   SET coluna = 'novo_valor' 
+--   WHERE condicao = 'valor';
+
+-- Exemplo 8: Remover coluna (CUIDADO!)
+-- ALTER TABLE tabela DROP COLUMN coluna_antiga;
+
+-- Exemplo 9: Renomear coluna
+-- ALTER TABLE tabela 
+--   CHANGE COLUMN nome_antigo nome_novo VARCHAR(255);
+
+-- Exemplo 10: Adicionar comentário
+-- ALTER TABLE tabela COMMENT = 'Descrição da tabela';
+
+-- ==================================================================
+-- DICAS:
+-- - Use IF NOT EXISTS para criar tabelas/índices
+-- - Use IF EXISTS para remover tabelas/índices
+-- - Sempre adicione INDEX em colunas usadas em WHERE/JOIN
+-- - Use VARCHAR ao invés de TEXT quando possível (melhor performance)
+-- - Defina DEFAULT para evitar NULL quando apropriado
+-- - Use FOREIGN KEY para manter integridade referencial
+-- - Adicione comentários explicativos
+-- ==================================================================
+
+-- Finalizado

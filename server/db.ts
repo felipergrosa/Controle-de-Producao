@@ -1,20 +1,32 @@
 import { sql, eq, and, like, desc } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
+import mysql from "mysql2/promise";
 import { InsertUser, users, products, productionEntries, productionDaySnapshots, productHistory, Product, ProductionEntry, ProductionDaySnapshot, ProductHistory, InsertProductHistory } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
 let _db: ReturnType<typeof drizzle> | null = null;
+let pool: ReturnType<typeof mysql.createPool> | null = null;
 
 // Lazily create the drizzle instance so local tooling can run without a DB.
 export async function getDb() {
-  if (!_db && process.env.DATABASE_URL) {
-    try {
-      _db = drizzle(process.env.DATABASE_URL);
-    } catch (error) {
-      console.warn("[Database] Failed to connect:", error);
-      _db = null;
-    }
+  if (_db) return _db;
+
+  const connectionString = process.env.DATABASE_URL;
+  if (!connectionString) {
+    console.warn("[Database] DATABASE_URL is not configured");
+    return null;
   }
+
+  try {
+    if (!pool) {
+      pool = mysql.createPool(connectionString);
+    }
+    _db = drizzle(pool as any) as ReturnType<typeof drizzle>;
+  } catch (error) {
+    console.warn("[Database] Failed to connect:", error);
+    _db = null;
+  }
+
   return _db;
 }
 
@@ -151,13 +163,13 @@ export async function createOrUpdateProduct(code: string, description: string, p
     code,
     description,
     photoUrl,
-    barcode: undefined,
+    barcode: barcode ?? null,
     totalProduced: 0,
     lastProducedAt: undefined,
     createdAt: now,
     updatedAt: now,
   });
-  return { id, code, description, photoUrl: photoUrl ?? null, barcode: null, totalProduced: 0, lastProducedAt: null, createdAt: now, updatedAt: now };
+  return { id, code, description, photoUrl: photoUrl ?? null, barcode: barcode ?? null, totalProduced: 0, lastProducedAt: null, createdAt: now, updatedAt: now };
 }
 
 // Production entries queries
@@ -328,7 +340,7 @@ export async function getTopProductsByQuantity(startDate: Date, endDate: Date, l
   
   const { sql } = await import("drizzle-orm");
   
-  return await db
+  const rows = await db
     .select({
       code: productionEntries.productCode,
       description: productionEntries.productDescription,
@@ -342,31 +354,50 @@ export async function getTopProductsByQuantity(startDate: Date, endDate: Date, l
     .groupBy(productionEntries.productCode, productionEntries.productDescription)
     .orderBy(sql`SUM(${productionEntries.quantity}) DESC`)
     .limit(limit);
+
+  return rows.map((row) => ({
+    code: row.code,
+    description: row.description,
+    totalQuantity: Number(row.totalQuantity ?? 0),
+    count: Number(row.count ?? 0),
+  }));
 }
 
 export async function getProductionStats(startDate: Date, endDate: Date): Promise<any> {
   const db = await getDb();
-  if (!db) return null;
+  if (!db) return {
+    totalQuantity: 0,
+    totalItems: 0,
+    uniqueProducts: 0,
+    averagePerDay: 0,
+  };
   
   const { sql } = await import("drizzle-orm");
   
   const result = await db
     .select({
-      totalQuantity: sql<number>`SUM(${productionEntries.quantity})`,
-      totalItems: sql<number>`COUNT(DISTINCT ${productionEntries.id})`,
-      uniqueProducts: sql<number>`COUNT(DISTINCT ${productionEntries.productCode})`,
-      averagePerDay: sql<number>`AVG(${productionDaySnapshots.totalQuantity})`,
+      totalQuantity: sql<number>`COALESCE(SUM(${productionEntries.quantity}), 0)`,
+      totalItems: sql<number>`COALESCE(COUNT(${productionEntries.id}), 0)`,
+      uniqueProducts: sql<number>`COALESCE(COUNT(DISTINCT ${productionEntries.productCode}), 0)`,
     })
     .from(productionEntries)
-    .leftJoin(
-      productionDaySnapshots,
-      sql`DATE(${productionEntries.sessionDate}) = DATE(${productionDaySnapshots.sessionDate})`
-    )
     .where(
       sql`${productionEntries.sessionDate} >= ${startDate} AND ${productionEntries.sessionDate} <= ${endDate}`
     );
-  
-  return result.length > 0 ? result[0] : null;
+
+  const summary = result.length > 0 ? result[0] : null;
+
+  const trend = await getDailyProductionTrend(startDate, endDate);
+  const averagePerDay = trend.length
+    ? trend.reduce((acc, day) => acc + Number(day.totalQuantity ?? 0), 0) / trend.length
+    : 0;
+
+  return {
+    totalQuantity: Number(summary?.totalQuantity ?? 0),
+    totalItems: Number(summary?.totalItems ?? 0),
+    uniqueProducts: Number(summary?.uniqueProducts ?? 0),
+    averagePerDay,
+  };
 }
 
 export async function getDailyProductionTrend(startDate: Date, endDate: Date): Promise<any[]> {
@@ -375,7 +406,7 @@ export async function getDailyProductionTrend(startDate: Date, endDate: Date): P
   
   const { sql } = await import("drizzle-orm");
   
-  return await db
+  const rows = await db
     .select({
       date: sql<string>`DATE(${productionEntries.sessionDate})`,
       totalQuantity: sql<number>`SUM(${productionEntries.quantity})`,
@@ -387,8 +418,13 @@ export async function getDailyProductionTrend(startDate: Date, endDate: Date): P
     )
     .groupBy(sql`DATE(${productionEntries.sessionDate})`)
     .orderBy(sql`DATE(${productionEntries.sessionDate})`);
-}
 
+  return rows.map((row) => ({
+    date: row.date,
+    totalQuantity: Number(row.totalQuantity ?? 0),
+    totalItems: Number(row.totalItems ?? 0),
+  }));
+}
 
 // Product Movement History Queries
 export async function getProductMovementHistory(productId: string): Promise<any[]> {
@@ -441,11 +477,11 @@ export async function getProductMovementSummary(productId: string): Promise<any>
   
   const result = await db
     .select({
-      totalProduced: sql<number>`SUM(CASE WHEN ${productHistory.type} = 'production' THEN ${productHistory.quantity} ELSE 0 END)`,
-      totalAdjustments: sql<number>`SUM(CASE WHEN ${productHistory.type} = 'adjustment' THEN ${productHistory.quantity} ELSE 0 END)`,
-      totalImported: sql<number>`SUM(CASE WHEN ${productHistory.type} = 'import' THEN ${productHistory.quantity} ELSE 0 END)`,
-      movementCount: sql<number>`COUNT(*)`,
-      lastMovement: sql<Date>`MAX(${productHistory.createdAt})`,
+      totalProduced: sql<number>`SUM(CASE WHEN ${productHistory.type} = 'production' THEN ${productHistory.quantity} ELSE 0 END)` ,
+      totalAdjustments: sql<number>`SUM(CASE WHEN ${productHistory.type} = 'adjustment' THEN ${productHistory.quantity} ELSE 0 END)` ,
+      totalImported: sql<number>`SUM(CASE WHEN ${productHistory.type} = 'import' THEN ${productHistory.quantity} ELSE 0 END)` ,
+      movementCount: sql<number>`COUNT(*)` ,
+      lastMovement: sql<Date>`MAX(${productHistory.createdAt})` ,
     })
     .from(productHistory)
     .where(eq(productHistory.productId, productId));

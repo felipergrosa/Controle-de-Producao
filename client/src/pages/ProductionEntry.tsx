@@ -1,13 +1,18 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useRef, useMemo, useEffect } from "react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { CheckCircle2, Trash2, X, AlertCircle } from "lucide-react";
+import { Trash2, AlertCircle, CheckCircle, Circle, ScanLine } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
+import { format } from "date-fns";
+import { ptBR } from "date-fns/locale";
+import { useAuth } from "@/_core/hooks/useAuth";
+import { Badge } from "@/components/ui/badge";
 
 interface ProductionItem {
   id: string;
@@ -21,66 +26,134 @@ interface ProductionItem {
 }
 
 export default function ProductionEntry() {
+  const { user } = useAuth();
   const today = new Date();
-  const todayStr = today.toISOString().split("T")[0];
+  today.setHours(0, 0, 0, 0);
+  const todayStr = format(today, "dd/MM/yy", { locale: ptBR });
 
   const [searchQuery, setSearchQuery] = useState("");
-  const [showModal, setShowModal] = useState(false);
+  const [partialSearch, setPartialSearch] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<any>(null);
   const [quantity, setQuantity] = useState("1");
-  const [grouping, setGrouping] = useState(true);
-  const [showOnlyUnchecked, setShowOnlyUnchecked] = useState(false);
-  const [isFinalizingDay, setIsFinalizingDay] = useState(false);
+  const [showQuantityModal, setShowQuantityModal] = useState(false);
+  const [showNotFoundModal, setShowNotFoundModal] = useState(false);
+  const [notFoundCode, setNotFoundCode] = useState("");
+  const [barcodeMode, setBarcodeMode] = useState(false);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const quantityInputRef = useRef<HTMLInputElement>(null);
+  const barcodeBufferRef = useRef("");
+  const barcodeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Queries - busca combinada por código ou descrição
-  const { data: searchResults = [] } = trpc.products.searchCombined.useQuery(
-    { query: searchQuery },
-    { enabled: searchQuery.length >= 2 }
-  );
+  // Utils para invalidação de cache
+  const utils = trpc.useUtils();
 
+  // Queries
   const { data: summary = { totalItems: 0, totalQuantity: 0 } } = trpc.productionEntries.getSummary.useQuery(
-    { date: today },
-    { refetchInterval: 5000 }
+    { date: today }
   );
 
-  const entriesQuery = trpc.productionEntries.getByDate.useQuery(
-    { date: today },
-    { refetchInterval: 5000 }
+  const { data: entriesData } = trpc.productionEntries.getByDate.useQuery(
+    { date: today }
   );
-  const { data: entriesData } = entriesQuery;
   const safeEntriesData = entriesData && Array.isArray(entriesData) ? entriesData : [];
 
-  // Mutations
-  const addEntryMutation = trpc.productionEntries.add.useMutation();
-  const updateEntryMutation = trpc.productionEntries.update.useMutation();
-  const deleteEntryMutation = trpc.productionEntries.delete.useMutation();
-  const finalizeDayMutation = trpc.snapshots.finalize.useMutation();
+  // Busca parcial (quando checkbox ativo)
+  const { data: searchResults = [] } = trpc.products.searchCombined.useQuery(
+    { query: searchQuery },
+    { enabled: partialSearch && searchQuery.length >= 2 }
+  );
 
-  // Usar resultados da busca combinada
-  const displayResults = useMemo(() => {
-    return searchResults;
-  }, [searchResults]);
+  // Mutations
+  const addEntryMutation = trpc.productionEntries.add.useMutation({
+    onSuccess: () => {
+      // Invalidar queries para atualizar os dados
+      utils.productionEntries.getByDate.invalidate();
+      utils.productionEntries.getSummary.invalidate();
+    },
+  });
+
+  const updateEntryMutation = trpc.productionEntries.update.useMutation({
+    onSuccess: () => {
+      utils.productionEntries.getByDate.invalidate();
+      utils.productionEntries.getSummary.invalidate();
+    },
+    onError: () => {
+      toast.error("Erro ao atualizar item");
+    },
+  });
+
+  const deleteEntryMutation = trpc.productionEntries.delete.useMutation({
+    onSuccess: () => {
+      utils.productionEntries.getByDate.invalidate();
+      utils.productionEntries.getSummary.invalidate();
+    },
+  });
 
   const items = useMemo(() => {
     return safeEntriesData;
   }, [safeEntriesData]);
 
-  const filteredItems = useMemo(() => {
-    if (!Array.isArray(items)) return [];
-    return showOnlyUnchecked ? items.filter((item: any) => !item.checked) : items;
-  }, [items, showOnlyUnchecked]);
+  const findProductByCode = async (query: string) => {
+    const normalized = query.trim().toUpperCase();
+    if (!normalized) return null;
+
+    try {
+      const results = await utils.products.searchCombined.fetch({ query: normalized });
+      const safeResults = Array.isArray(results) ? results : [];
+      return (
+        safeResults.find(
+          (p: any) =>
+            p.code?.toUpperCase() === normalized ||
+            p.barcode?.toUpperCase() === normalized
+        ) ?? null
+      );
+    } catch (error) {
+      console.error("findProductByCode error:", error);
+      return null;
+    }
+  };
+
+  const handleSearch = async () => {
+    if (!searchQuery.trim()) return;
+
+    const product = await findProductByCode(searchQuery);
+
+    if (product) {
+      setSelectedProduct(product);
+      setQuantity("1");
+      setShowQuantityModal(true);
+      setTimeout(() => quantityInputRef.current?.focus(), 100);
+    } else {
+      setNotFoundCode(searchQuery.trim());
+      setShowNotFoundModal(true);
+    }
+  };
 
   const handleSelectProduct = (product: any) => {
     setSelectedProduct(product);
     setQuantity("1");
-    setShowModal(true);
+    setShowQuantityModal(true);
+    setTimeout(() => quantityInputRef.current?.focus(), 100);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (barcodeMode) {
+      // Em modo leitor o Enter é tratado pelo listener global
+      if (e.key === "Enter") {
+        e.preventDefault();
+      }
+      return;
+    }
+    if (e.key === "Enter") {
+      e.preventDefault();
+      if (!partialSearch) {
+        handleSearch();
+      }
+    }
   };
 
   const handleAddProduct = async () => {
-    if (!selectedProduct) {
-      toast.error("Selecione um produto");
-      return;
-    }
+    if (!selectedProduct) return;
 
     const qty = parseInt(quantity) || 0;
     if (qty < 1) {
@@ -96,19 +169,118 @@ export default function ProductionEntry() {
         photoUrl: selectedProduct.photoUrl || undefined,
         quantity: qty,
         sessionDate: today,
-        grouping,
+        grouping: true,
       });
 
-      toast.success("Produto adicionado à lista");
-      setShowModal(false);
+      toast.success("Produto adicionado");
+      setShowQuantityModal(false);
       setSelectedProduct(null);
       setQuantity("1");
-      // Refetch the entries
-      entriesQuery.refetch();
       setSearchQuery("");
+      setTimeout(() => searchInputRef.current?.focus(), 100);
     } catch (error: any) {
       toast.error(error?.message || "Erro ao adicionar produto");
     }
+  };
+
+  const handleQuantityKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      handleAddProduct();
+    }
+  };
+
+  const handleBarcodeScan = async (rawCode: string) => {
+    const code = rawCode.trim();
+    if (!code) return;
+
+    const product = await findProductByCode(code);
+    if (!product) {
+      setNotFoundCode(code);
+      setShowNotFoundModal(true);
+      return;
+    }
+
+    try {
+      await addEntryMutation.mutateAsync({
+        productId: product.id,
+        productCode: product.code,
+        productDescription: product.description,
+        photoUrl: product.photoUrl || undefined,
+        quantity: 1,
+        sessionDate: today,
+        grouping: true,
+      });
+      toast.success(`Produto ${product.code} lançado`);
+    } catch (error: any) {
+      toast.error(error?.message || "Erro ao adicionar produto");
+    }
+  };
+
+  const resetBarcodeBuffer = () => {
+    barcodeBufferRef.current = "";
+    if (barcodeTimeoutRef.current) {
+      clearTimeout(barcodeTimeoutRef.current);
+      barcodeTimeoutRef.current = null;
+    }
+  };
+
+  useEffect(() => {
+    if (!barcodeMode) {
+      resetBarcodeBuffer();
+      return;
+    }
+
+    const handleKeyDownGlobal = (event: KeyboardEvent) => {
+      const activeElement = document.activeElement;
+      const isTypingField = activeElement instanceof HTMLInputElement || activeElement instanceof HTMLTextAreaElement;
+
+      // Mesmo em modo leitor, permitimos Delete/Backspace para limpar campos manualmente
+      if (isTypingField && !event.key.startsWith("F")) {
+        event.preventDefault();
+        activeElement.blur();
+      }
+
+      if (event.key === "Enter") {
+        event.preventDefault();
+        const code = barcodeBufferRef.current;
+        resetBarcodeBuffer();
+        if (code) {
+          handleBarcodeScan(code);
+        }
+        return;
+      }
+
+      if (event.key.length === 1 && !event.ctrlKey && !event.altKey && !event.metaKey) {
+        barcodeBufferRef.current += event.key;
+        if (barcodeTimeoutRef.current) {
+          clearTimeout(barcodeTimeoutRef.current);
+        }
+        barcodeTimeoutRef.current = setTimeout(() => {
+          resetBarcodeBuffer();
+        }, 150);
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDownGlobal);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDownGlobal);
+      resetBarcodeBuffer();
+    };
+  }, [barcodeMode]);
+
+  const toggleBarcodeMode = () => {
+    setBarcodeMode((prev) => {
+      const next = !prev;
+      resetBarcodeBuffer();
+      if (next) {
+        searchInputRef.current?.blur();
+        toast.info("Modo leitor ativado. Escaneie um código para lançar quantidade 1.");
+      } else {
+        toast.info("Modo leitor desativado.");
+      }
+      return next;
+    });
   };
 
   const handleToggleChecked = async (item: ProductionItem) => {
@@ -118,7 +290,7 @@ export default function ProductionEntry() {
         checked: !item.checked,
       });
     } catch (error) {
-      toast.error("Erro ao atualizar item");
+      // toast gerenciado no onError
     }
   };
 
@@ -131,34 +303,6 @@ export default function ProductionEntry() {
     }
   };
 
-  const handleFinalizeDay = async () => {
-    if (items.length === 0) {
-      toast.error("Nenhum item para finalizar");
-      return;
-    }
-
-    setIsFinalizingDay(true);
-    try {
-      await finalizeDayMutation.mutateAsync({
-        sessionDate: today,
-        entries: items.map((item) => ({
-          photoUrl: item.photoUrl || undefined,
-          code: item.productCode,
-          description: item.productDescription,
-          quantity: item.quantity,
-          insertedAt: item.insertedAt,
-          checked: item.checked,
-        })),
-      });
-
-      toast.success("Dia finalizado com sucesso!");
-      setSearchQuery("");
-    } catch (error: any) {
-      toast.error(error.message || "Erro ao finalizar dia");
-    } finally {
-      setIsFinalizingDay(false);
-    }
-  };
 
   return (
     <div className="space-y-6">
@@ -167,110 +311,135 @@ export default function ProductionEntry() {
         <p className="text-muted-foreground mt-2">Registre a produção do dia</p>
       </div>
 
-      {/* Summary */}
-      <div className="grid grid-cols-2 gap-4">
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium">Qtd. de Itens</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-3xl font-bold">{summary.totalItems}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium">Qtd. Total Produzida</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-3xl font-bold">{summary.totalQuantity}</p>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Search */}
+      {/* Search Section */}
       <Card>
-        <CardHeader>
-          <CardTitle>Buscar Produto</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="relative">
-            <Input
-              placeholder="Digite código ou descrição"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pr-10"
-            />
-            {searchQuery && (
-              <button
-                onClick={() => setSearchQuery("")}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+        <CardContent className="pt-4 space-y-3">
+          <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+            <div className="flex items-center gap-2">
+              <Checkbox
+                id="partial-search"
+                checked={partialSearch}
+                onCheckedChange={(checked) => setPartialSearch(checked as boolean)}
+              />
+              <Label htmlFor="partial-search" className="cursor-pointer text-sm">Busca parcial</Label>
+            </div>
+            <div className="flex items-center gap-2">
+              {barcodeMode && <Badge variant="secondary">Modo leitor ativo</Badge>}
+              <Button
+                type="button"
+                variant={barcodeMode ? "default" : "outline"}
+                onClick={toggleBarcodeMode}
+                className="whitespace-nowrap"
               >
-                <X size={18} />
-              </button>
-            )}
+                <ScanLine className="mr-2 h-4 w-4" />
+                {barcodeMode ? "Desativar leitor" : "Modo leitor"}
+              </Button>
+            </div>
           </div>
 
-          {searchQuery.length < 2 ? (
-            <p className="text-sm text-muted-foreground">Digite pelo menos 2 caracteres para buscar</p>
-          ) : displayResults.length === 0 ? (
-            <p className="text-sm text-muted-foreground">Nenhum produto encontrado</p>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-96 overflow-y-auto">
-              {displayResults.map((product) => (
-                <button
-                  key={product.id}
-                  onClick={() => handleSelectProduct(product)}
-                  className="p-3 border rounded-lg hover:bg-accent hover:border-primary transition-colors text-left"
-                >
-                  <div className="flex gap-3">
-                    {product.photoUrl && (
-                      <img
-                        src={product.photoUrl}
-                        alt={product.code}
-                        className="w-12 h-12 rounded object-cover flex-shrink-0"
-                      />
-                    )}
-                    <div className="flex-1 min-w-0">
-                      <p className="font-medium text-sm">{product.code}</p>
-                      <p className="text-xs text-muted-foreground truncate">{product.description}</p>
-                      {product.barcode && <p className="text-xs text-muted-foreground">Barras: {product.barcode}</p>}
-                    </div>
-                  </div>
-                </button>
-              ))}
+          <div>
+            <Label htmlFor="search" className="text-base font-semibold">Buscar Produto</Label>
+            <div className="mt-2">
+              <Input
+                id="search"
+                ref={searchInputRef}
+                placeholder="Digite código ou descrição sobre o pressione Enter"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onKeyDown={handleKeyDown}
+                className="text-base"
+              />
+            </div>
+          </div>
+
+          {/* Resultados da busca parcial */}
+          {partialSearch && searchQuery.length >= 2 && (
+            <div className="border-t pt-4">
+              {searchResults.length === 0 ? (
+                <p className="text-sm text-muted-foreground text-center py-4">Nenhum produto encontrado</p>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-96 overflow-y-auto">
+                  {searchResults.map((product) => (
+                    <button
+                      key={product.id}
+                      onClick={() => handleSelectProduct(product)}
+                      className="p-3 border rounded-lg hover:bg-accent hover:border-primary transition-colors text-left"
+                    >
+                      <div className="flex gap-3">
+                        {product.photoUrl && (
+                          <img
+                            src={product.photoUrl}
+                            alt={product.code}
+                            className="w-12 h-12 rounded object-cover flex-shrink-0"
+                          />
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium text-sm">{product.code}</p>
+                          <p className="text-xs text-muted-foreground truncate">{product.description}</p>
+                          {product.barcode && <p className="text-xs text-muted-foreground">Barras: {product.barcode}</p>}
+                        </div>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </CardContent>
       </Card>
 
+      {/* Not Found Modal */}
+      <Dialog open={showNotFoundModal} onOpenChange={setShowNotFoundModal}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Produto Não Encontrado</DialogTitle>
+          </DialogHeader>
+          <div className="flex flex-col items-center py-6 gap-4">
+            <div className="w-16 h-16 rounded-full bg-yellow-100 flex items-center justify-center">
+              <AlertCircle className="w-10 h-10 text-yellow-600" />
+            </div>
+            <div className="text-center">
+              <p className="text-lg font-semibold">Produto não encontrado</p>
+              <p className="text-sm text-muted-foreground mt-1">
+                Nenhum produto corresponde à busca: <strong>{notFoundCode}</strong>
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button onClick={() => setShowNotFoundModal(false)}>Fechar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Quantity Modal */}
-      <Dialog open={showModal} onOpenChange={setShowModal}>
-        <DialogContent>
+      <Dialog open={showQuantityModal} onOpenChange={setShowQuantityModal}>
+        <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Informar Quantidade</DialogTitle>
-            <DialogDescription>
+            <DialogDescription className="text-base">
               {selectedProduct?.code} - {selectedProduct?.description}
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium mb-2">Quantidade</label>
-              <Input
-                type="number"
-                min="1"
-                value={quantity}
-                onChange={(e) => setQuantity(e.target.value)}
-                className="text-lg"
-                autoFocus
-              />
-            </div>
+          <div>
+            <Label htmlFor="quantity" className="text-base">Quantidade</Label>
+            <Input
+              id="quantity"
+              ref={quantityInputRef}
+              type="number"
+              min="1"
+              value={quantity}
+              onChange={(e) => setQuantity(e.target.value)}
+              onKeyDown={handleQuantityKeyDown}
+              className="text-lg mt-2"
+            />
           </div>
           <DialogFooter>
             <Button
               variant="outline"
               onClick={() => {
-                setShowModal(false);
+                setShowQuantityModal(false);
                 setSelectedProduct(null);
+                setTimeout(() => searchInputRef.current?.focus(), 100);
               }}
             >
               Cancelar
@@ -278,7 +447,6 @@ export default function ProductionEntry() {
             <Button
               onClick={handleAddProduct}
               disabled={addEntryMutation.isPending}
-              className="gap-2"
             >
               {addEntryMutation.isPending ? "Adicionando..." : "Adicionar"}
             </Button>
@@ -288,89 +456,87 @@ export default function ProductionEntry() {
 
       {/* Items List */}
       <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <div>
-            <CardTitle>Itens Lançados</CardTitle>
-            <CardDescription>Produção de {todayStr}</CardDescription>
+        <CardContent className="pt-6">
+          <div className="mb-4">
+            <h2 className="text-xl font-bold">Itens Lançados</h2>
+            <div className="text-sm text-muted-foreground mt-1">
+              Produção de {todayStr}
+            </div>
+            <div className="text-sm mt-1">
+              <span className="font-semibold">QUANTIDADE:</span> {summary.totalItems} |
+              <span className="font-semibold ml-2">SOMA TOTAL:</span> {summary.totalQuantity}
+            </div>
           </div>
-          <label className="flex items-center gap-2 cursor-pointer">
-            <Checkbox checked={showOnlyUnchecked} onCheckedChange={(v) => setShowOnlyUnchecked(v as boolean)} />
-            <span className="text-sm">Apenas não conferidos</span>
-          </label>
-        </CardHeader>
-        <CardContent>
-          {filteredItems.length === 0 ? (
-            <div className="text-center py-8 text-muted-foreground">
-              <AlertCircle className="mx-auto h-8 w-8 mb-2 opacity-50" />
-              <p>Nenhum item lançado ainda</p>
+
+          {items.length === 0 ? (
+            <div className="text-center py-12 text-muted-foreground border-t">
+              <AlertCircle className="mx-auto h-12 w-12 mb-3 opacity-30" />
+              <p className="text-lg">Nenhum item lançado ainda</p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {filteredItems.map((item) => (
-                <div
-                  key={item.id}
-                  className={`p-4 border rounded-lg ${
-                    item.checked ? "bg-green-50 border-green-200" : "bg-yellow-50 border-yellow-200"
-                  } hover:shadow-md transition-shadow`}
-                >
-                  <div className="flex gap-3 mb-3">
-                    {item.photoUrl && (
-                      <img
-                        src={item.photoUrl}
-                        alt={item.productCode}
-                        className="w-20 h-20 rounded object-cover flex-shrink-0"
-                      />
-                    )}
-                    <div className="flex-1 min-w-0">
-                      <p className="font-bold text-lg">{item.productCode}</p>
-                      <p className="text-sm text-muted-foreground truncate">{item.productDescription}</p>
-                      <p className="text-xs text-muted-foreground mt-1">
-                        Inserido em: {new Date(item.insertedAt).toLocaleString("pt-BR")}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-2xl font-bold text-primary">{item.quantity}</p>
-                      <p className="text-xs text-muted-foreground">unidades</p>
-                    </div>
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => handleToggleChecked(item)}
-                        className={`p-2 rounded-lg transition-colors ${
-                          item.checked
-                            ? "bg-green-500 text-white hover:bg-green-600"
-                            : "bg-yellow-200 text-yellow-700 hover:bg-yellow-300"
-                        }`}
-                      >
-                        <CheckCircle2 size={20} />
-                      </button>
-                      <button
-                        onClick={() => handleDeleteItem(item)}
-                        className="p-2 rounded-lg bg-red-100 text-red-600 hover:bg-red-200 transition-colors"
-                      >
-                        <Trash2 size={20} />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              ))}
+            <div className="border rounded-lg overflow-hidden">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-[120px]">Código</TableHead>
+                    <TableHead>Descrição</TableHead>
+                    <TableHead className="w-[80px] text-center">Qtd</TableHead>
+                    <TableHead className="w-[200px]">Inserido em</TableHead>
+                    <TableHead className="w-[120px]">Operador</TableHead>
+                    <TableHead className="w-[140px]">Conferido</TableHead>
+                    <TableHead className="w-[80px] text-center">Ações</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {items.map((item, index) => (
+                    <TableRow 
+                      key={item.id}
+                      className={item.checked ? "bg-green-50" : index % 2 === 0 ? "bg-amber-100/60" : "bg-white"}
+                    >
+                      <TableCell className={`font-mono text-blue-600 ${item.checked ? "line-through" : ""}`}>
+                        {item.productCode}
+                      </TableCell>
+                      <TableCell className={`max-w-[300px] truncate ${item.checked ? "line-through" : ""}`}>
+                        {item.productDescription}
+                      </TableCell>
+                      <TableCell className="text-center font-bold">{item.quantity}</TableCell>
+                      <TableCell className="text-sm">
+                        <div className="flex flex-col">
+                          <span>{format(new Date(item.insertedAt), "dd/MM/yyyy", { locale: ptBR })}</span>
+                          <span className="text-xs text-muted-foreground">
+                            {format(new Date(item.insertedAt), "HH:mm", { locale: ptBR })}
+                          </span>
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-sm">{item.checked && user?.name ? user.name : ""}</TableCell>
+                      <TableCell className="text-sm">
+                        <div className="flex flex-col">
+                          <span className={`font-semibold ${item.checked ? "text-green-600" : "text-yellow-600"}`}>
+                            {item.checked ? "Sim" : "Não"}
+                          </span>
+                          {item.checked && user?.name && (
+                            <span className="text-xs text-muted-foreground">{user.name}</span>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-center">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleDeleteItem(item)}
+                          className="h-8 w-8 p-0 rounded-full bg-red-500 text-white hover:bg-red-600"
+                        >
+                          <Trash2 size={16} />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
             </div>
           )}
         </CardContent>
       </Card>
-
-      {/* Finalize Button */}
-      {items.length > 0 && (
-        <Button
-          onClick={handleFinalizeDay}
-          disabled={isFinalizingDay}
-          size="lg"
-          className="w-full"
-        >
-          {isFinalizingDay ? "Finalizando..." : "Finalizar Dia!"}
-        </Button>
-      )}
     </div>
   );
 }
