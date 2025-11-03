@@ -35,6 +35,27 @@ async function getExecutedMigrations(connection: mysql.Connection): Promise<numb
   return rows.map((r) => r.version);
 }
 
+async function ensureBaseSchema(
+  connection: mysql.Connection,
+  executedVersions: number[]
+): Promise<{ changed: boolean; versions: number[] }> {
+  if (!executedVersions.includes(0)) {
+    return { changed: false, versions: executedVersions };
+  }
+
+  const [usersTable] = await connection.execute<mysql.RowDataPacket[]>(
+    "SHOW TABLES LIKE 'users'"
+  );
+
+  if ((usersTable as mysql.RowDataPacket[]).length === 0) {
+    await connection.execute("DELETE FROM _migrations WHERE version = 0");
+    const filtered = executedVersions.filter((version) => version !== 0);
+    return { changed: true, versions: filtered };
+  }
+
+  return { changed: false, versions: executedVersions };
+}
+
 /**
  * Lê arquivos de migration da pasta migrations/
  */
@@ -136,8 +157,16 @@ export async function runMigrations(): Promise<void> {
     await ensureMigrationsTable(connection);
 
     // Buscar migrations já executadas
-    const executedVersions = await getExecutedMigrations(connection);
+    let executedVersions = await getExecutedMigrations(connection);
     console.log(`[Migrations] Migrations já executadas: [${executedVersions.join(", ")}]`);
+
+    const ensuredBase = await ensureBaseSchema(connection, executedVersions);
+    if (ensuredBase.changed) {
+      executedVersions = ensuredBase.versions;
+      console.warn("[Migrations] Migration 000 foi resetada para recriar schema base.");
+    } else {
+      executedVersions = ensuredBase.versions;
+    }
 
     // Ler arquivos de migration
     const allMigrations = await readMigrationFiles();
