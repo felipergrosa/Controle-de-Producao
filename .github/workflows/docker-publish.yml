@@ -71,12 +71,14 @@ jobs:
     needs: build-and-push
     if: github.ref == 'refs/heads/main'
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
       - name: Copy docker-compose to VPS
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
-          key: ${{ secrets.VPS_SSH_KEY }}
+          password: ${{ secrets.VPS_PASSWORD }}
           port: ${{ secrets.VPS_SSH_PORT || 22 }}
           source: "docker-compose.prod.yml"
           target: "/opt/controle-producao/"
@@ -87,7 +89,7 @@ jobs:
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
-          key: ${{ secrets.VPS_SSH_KEY }}
+          password: ${{ secrets.VPS_PASSWORD }}
           port: ${{ secrets.VPS_SSH_PORT || 22 }}
           script: |
             set -e
@@ -103,7 +105,7 @@ jobs:
             APP_PORT=${{ secrets.APP_PORT }}
             DB_PORT=${{ secrets.DB_PORT }}
             OAUTH_SERVER_URL=${{ secrets.OAUTH_SERVER_URL || '' }}
-            DISABLE_AUTH=${{ secrets.DISABLE_AUTH || 'true' }}
+            DISABLE_AUTH=${{ secrets.DISABLE_AUTH || 'false' }}
             TZ=America/Sao_Paulo
             EOF
             # Garantir nome do arquivo padrão
