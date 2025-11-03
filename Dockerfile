@@ -33,5 +33,9 @@ WORKDIR /app
 COPY --from=build /app/dist ./dist
 COPY --from=prod-deps /app/node_modules ./node_modules
 COPY package.json ./package.json
+# Copiar scripts e migrations para execução automática
+COPY --from=build /app/scripts ./scripts
+COPY --from=build /app/migrations ./migrations
+COPY --from=build /app/server ./server
 EXPOSE 5000
 CMD ["node", "dist/index.js"]
