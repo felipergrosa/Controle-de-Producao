@@ -6,56 +6,15 @@
 ALTER TABLE users 
   MODIFY openId VARCHAR(64) NULL; -- Torna openId opcional
 
--- Adicionar coluna password_hash se não existir
-SET @col_exists := (
-  SELECT COUNT(*)
-  FROM INFORMATION_SCHEMA.COLUMNS
-  WHERE TABLE_SCHEMA = DATABASE()
-    AND TABLE_NAME = 'users'
-    AND COLUMN_NAME = 'password_hash'
-);
-SET @ddl := IF(
-  @col_exists = 0,
-  'ALTER TABLE `users` ADD COLUMN `password_hash` VARCHAR(255) NULL AFTER `email`',
-  'SELECT 1'
-);
-PREPARE stmt FROM @ddl;
-EXECUTE stmt;
-DEALLOCATE PREPARE stmt;
+-- Adicionar colunas necessárias (ignorar erro se já existirem)
+ALTER TABLE users 
+  ADD COLUMN password_hash VARCHAR(255) NULL AFTER email;
 
--- Adicionar coluna is_active se não existir
-SET @col_exists := (
-  SELECT COUNT(*)
-  FROM INFORMATION_SCHEMA.COLUMNS
-  WHERE TABLE_SCHEMA = DATABASE()
-    AND TABLE_NAME = 'users'
-    AND COLUMN_NAME = 'is_active'
-);
-SET @ddl := IF(
-  @col_exists = 0,
-  'ALTER TABLE `users` ADD COLUMN `is_active` BOOLEAN NOT NULL DEFAULT TRUE AFTER `role`',
-  'SELECT 1'
-);
-PREPARE stmt FROM @ddl;
-EXECUTE stmt;
-DEALLOCATE PREPARE stmt;
+ALTER TABLE users 
+  ADD COLUMN is_active BOOLEAN NOT NULL DEFAULT TRUE AFTER role;
 
--- Adicionar coluna must_change_password se não existir
-SET @col_exists := (
-  SELECT COUNT(*)
-  FROM INFORMATION_SCHEMA.COLUMNS
-  WHERE TABLE_SCHEMA = DATABASE()
-    AND TABLE_NAME = 'users'
-    AND COLUMN_NAME = 'must_change_password'
-);
-SET @ddl := IF(
-  @col_exists = 0,
-  'ALTER TABLE `users` ADD COLUMN `must_change_password` BOOLEAN NOT NULL DEFAULT FALSE AFTER `is_active`',
-  'SELECT 1'
-);
-PREPARE stmt FROM @ddl;
-EXECUTE stmt;
-DEALLOCATE PREPARE stmt;
+ALTER TABLE users 
+  ADD COLUMN must_change_password BOOLEAN NOT NULL DEFAULT FALSE AFTER is_active;
 
 -- 2. Criar tabela sessions
 CREATE TABLE IF NOT EXISTS sessions (

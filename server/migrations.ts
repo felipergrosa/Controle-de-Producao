@@ -89,9 +89,19 @@ async function executeMigration(
     .map((s) => s.trim())
     .filter((s) => s.length > 0 && !s.startsWith("--")); // Remove comentários
 
+  const ignorableErrorCodes = new Set([1060, 1061, 1091]);
+
   for (const statement of statements) {
     if (statement.length > 0) {
-      await connection.execute(statement);
+      try {
+        await connection.execute(statement);
+      } catch (error: any) {
+        if (error?.errno && ignorableErrorCodes.has(error.errno)) {
+          console.warn(`[Migrations] Aviso ignorado (${error.code ?? error.errno}): ${error.sqlMessage ?? error.message}`);
+          continue;
+        }
+        throw error;
+      }
     }
   }
 
