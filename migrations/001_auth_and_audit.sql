@@ -6,15 +6,56 @@
 ALTER TABLE users 
   MODIFY openId VARCHAR(64) NULL; -- Torna openId opcional
 
--- Adicionar colunas de autenticação se não existirem
-ALTER TABLE users 
-  ADD COLUMN IF NOT EXISTS password_hash VARCHAR(255) NULL AFTER email;
+-- Adicionar coluna password_hash se não existir
+SET @col_exists := (
+  SELECT COUNT(*)
+  FROM INFORMATION_SCHEMA.COLUMNS
+  WHERE TABLE_SCHEMA = DATABASE()
+    AND TABLE_NAME = 'users'
+    AND COLUMN_NAME = 'password_hash'
+);
+SET @ddl := IF(
+  @col_exists = 0,
+  'ALTER TABLE `users` ADD COLUMN `password_hash` VARCHAR(255) NULL AFTER `email`',
+  'SELECT 1'
+);
+PREPARE stmt FROM @ddl;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
 
-ALTER TABLE users 
-  ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE AFTER role;
+-- Adicionar coluna is_active se não existir
+SET @col_exists := (
+  SELECT COUNT(*)
+  FROM INFORMATION_SCHEMA.COLUMNS
+  WHERE TABLE_SCHEMA = DATABASE()
+    AND TABLE_NAME = 'users'
+    AND COLUMN_NAME = 'is_active'
+);
+SET @ddl := IF(
+  @col_exists = 0,
+  'ALTER TABLE `users` ADD COLUMN `is_active` BOOLEAN NOT NULL DEFAULT TRUE AFTER `role`',
+  'SELECT 1'
+);
+PREPARE stmt FROM @ddl;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
 
-ALTER TABLE users 
-  ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN NOT NULL DEFAULT FALSE AFTER is_active;
+-- Adicionar coluna must_change_password se não existir
+SET @col_exists := (
+  SELECT COUNT(*)
+  FROM INFORMATION_SCHEMA.COLUMNS
+  WHERE TABLE_SCHEMA = DATABASE()
+    AND TABLE_NAME = 'users'
+    AND COLUMN_NAME = 'must_change_password'
+);
+SET @ddl := IF(
+  @col_exists = 0,
+  'ALTER TABLE `users` ADD COLUMN `must_change_password` BOOLEAN NOT NULL DEFAULT FALSE AFTER `is_active`',
+  'SELECT 1'
+);
+PREPARE stmt FROM @ddl;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
 
 -- 2. Criar tabela sessions
 CREATE TABLE IF NOT EXISTS sessions (
@@ -54,20 +95,6 @@ CREATE TABLE IF NOT EXISTS audit_logs (
 ALTER TABLE product_history 
   MODIFY created_by INT NULL;
 
--- 5. Criar primeiro usuário admin (AJUSTAR DADOS CONFORME NECESSÁRIO)
--- Senha padrão: "admin123" (TROCAR IMEDIATAMENTE)
--- Hash bcrypt válido para senha 'admin123'
-INSERT INTO users (email, password_hash, name, role, loginMethod, is_active, must_change_password)
-VALUES (
-  'admin@sistema.com',
-  '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy',
-  'Administrador',
-  'admin',
-  'local',
-  TRUE,
-  TRUE -- Forçar troca de senha no primeiro login
-)
-ON DUPLICATE KEY UPDATE id = id; -- Ignorar se já existe
 -- 6. Comentários nas tabelas
 -- Finalizado
 -- IMPORTANTE: 
