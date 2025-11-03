@@ -24,7 +24,8 @@ COPY package.json ./
 COPY patches ./patches
 # Dependências de compilação necessárias para mysql2
 RUN apk add --no-cache python3 make g++
-RUN pnpm install --prod --no-frozen-lockfile
+# Instalar todas as dependências (incluindo vite) pois o servidor precisa delas em runtime
+RUN pnpm install --no-frozen-lockfile
 
 FROM base AS production
 ENV NODE_ENV=production
