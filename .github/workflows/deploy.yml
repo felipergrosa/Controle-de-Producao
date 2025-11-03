@@ -39,7 +39,7 @@ jobs:
           username: ${{ secrets.VPS_USER }}
           password: ${{ secrets.VPS_PASSWORD }}
           source: docker-compose.prod.yml
-          target: /opt/controle-producao/
+          target: /root/controle-de-producao/
 
       - name: Deploy to VPS
         uses: appleboy/ssh-action@v1.0.0
@@ -48,7 +48,8 @@ jobs:
           username: ${{ secrets.VPS_USER }}
           password: ${{ secrets.VPS_PASSWORD }}
           script: |
-            cd /opt/controle-producao
+            mkdir -p /root/controle-de-producao
+            cd /root/controle-de-producao
             docker compose -f docker-compose.prod.yml pull
             docker compose -f docker-compose.prod.yml up -d
             docker system prune -af

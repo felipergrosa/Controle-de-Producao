@@ -81,7 +81,7 @@ jobs:
           password: ${{ secrets.VPS_PASSWORD }}
           port: ${{ secrets.VPS_SSH_PORT || 22 }}
           source: "docker-compose.prod.yml"
-          target: "/opt/controle-producao/"
+          target: "/root/controle-de-producao/"
           strip_components: 0
 
       - name: Prepare .env and deploy
@@ -93,9 +93,8 @@ jobs:
           port: ${{ secrets.VPS_SSH_PORT || 22 }}
           script: |
             set -e
-            sudo mkdir -p /opt/controle-producao
-            sudo chown -R $USER:$USER /opt/controle-producao
-            cd /opt/controle-producao
+            mkdir -p /root/controle-de-producao
+            cd /root/controle-de-producao
             # Criar .env com segredos
             cat > .env << 'EOF'
             DOCKERHUB_USERNAME=${{ secrets.DOCKERHUB_USERNAME }}
