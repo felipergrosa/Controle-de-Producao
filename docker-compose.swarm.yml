@@ -50,11 +50,12 @@ services:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
       MYSQL_DATABASE: ${MYSQL_DATABASE:-production_control}
       TZ: America/Sao_Paulo
-    ports:
-      - target: 3306
-        published: ${DB_PORT:-3306}
-        protocol: tcp
-        mode: host
+    # Porta removida para evitar conflito - acesse via túnel SSH se necessário
+    # ports:
+    #   - target: 3306
+    #     published: ${DB_PORT:-3306}
+    #     protocol: tcp
+    #     mode: host
     volumes:
       - db_data_prod:/var/lib/mysql
     networks:
