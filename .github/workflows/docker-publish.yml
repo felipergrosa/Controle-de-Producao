@@ -80,7 +80,7 @@ jobs:
           username: ${{ secrets.VPS_USER }}
           password: ${{ secrets.VPS_PASSWORD }}
           port: ${{ secrets.VPS_SSH_PORT || 22 }}
-          source: "docker-compose.prod.yml"
+          source: "docker-compose.swarm.yml"
           target: "/root/controle-de-producao/"
           strip_components: 0
 
@@ -95,20 +95,25 @@ jobs:
             set -e
             mkdir -p /root/controle-de-producao
             cd /root/controle-de-producao
-            # Criar .env com segredos
-            cat > .env << 'EOF'
-            DOCKERHUB_USERNAME=${{ secrets.DOCKERHUB_USERNAME }}
-            MYSQL_ROOT_PASSWORD=${{ secrets.MYSQL_ROOT_PASSWORD }}
-            MYSQL_DATABASE=${{ secrets.MYSQL_DATABASE }}
-            JWT_SECRET=${{ secrets.JWT_SECRET }}
-            APP_PORT=${{ secrets.APP_PORT }}
-            DB_PORT=${{ secrets.DB_PORT }}
-            OAUTH_SERVER_URL=${{ secrets.OAUTH_SERVER_URL || '' }}
-            DISABLE_AUTH=${{ secrets.DISABLE_AUTH || 'false' }}
-            TZ=America/Sao_Paulo
-            EOF
-            # Garantir nome do arquivo padrão
-            cp -f docker-compose.prod.yml docker-compose.yml
-            # Pull e subir containers
-            docker compose -f docker-compose.yml --env-file .env pull
-            docker compose -f docker-compose.yml --env-file .env up -d --remove-orphans
+            
+            # Exportar variáveis de ambiente
+            export DOCKERHUB_USERNAME="${{ secrets.DOCKERHUB_USERNAME }}"
+            export MYSQL_ROOT_PASSWORD="${{ secrets.MYSQL_ROOT_PASSWORD }}"
+            export MYSQL_DATABASE="${{ secrets.MYSQL_DATABASE }}"
+            export JWT_SECRET="${{ secrets.JWT_SECRET }}"
+            export APP_PORT="${{ secrets.APP_PORT }}"
+            export DB_PORT="${{ secrets.DB_PORT }}"
+            export APP_DOMAIN="${{ secrets.APP_DOMAIN }}"
+            export TRAEFIK_ENTRYPOINT="${{ secrets.TRAEFIK_ENTRYPOINT || 'websecure' }}"
+            export TRAEFIK_CERT_RESOLVER="${{ secrets.TRAEFIK_CERT_RESOLVER || 'letsencryptresolver' }}"
+            export VITE_APP_TITLE="${{ secrets.VITE_APP_TITLE || 'Controle de Produção' }}"
+            export DISABLE_AUTH="${{ secrets.DISABLE_AUTH || 'false' }}"
+            
+            # Pull da imagem mais recente
+            docker pull ${DOCKERHUB_USERNAME}/controle-producao:latest
+            
+            # Deploy via Swarm stack
+            docker stack deploy -c docker-compose.swarm.yml controle-de-producao --with-registry-auth
+            
+            # Limpar imagens antigas
+            docker image prune -af
