@@ -115,5 +115,26 @@ jobs:
             # Deploy via Swarm stack
             docker stack deploy -c docker-compose.swarm.yml controle-de-producao --with-registry-auth
             
+            # Aguardar container principal iniciar
+            echo "Aguardando container do app ficar disponível..."
+            for i in $(seq 1 10); do
+              CONTAINER_ID=$(docker ps --filter "name=controle-de-producao_frontend" -q | head -n1)
+              if [ -n "$CONTAINER_ID" ]; then
+                break
+              fi
+              echo "Tentativa $i/10: container ainda não disponível, aguardando..."
+              sleep 6
+            done
+
+            if [ -z "$CONTAINER_ID" ]; then
+              echo "Container do app não encontrado após aguardar. Abortando migrations."
+              exit 1
+            fi
+
+            # Executar migrations dentro do container
+            echo "Executando migrations do banco..."
+            docker exec "$CONTAINER_ID" npx tsx scripts/migrate.ts
+            echo "Migrations executadas com sucesso."
+
             # Limpar imagens antigas
             docker image prune -af
