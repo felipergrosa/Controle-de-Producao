@@ -112,17 +112,22 @@ jobs:
             # Pull da imagem mais recente
             docker pull ${DOCKERHUB_USERNAME}/controle-producao:latest
             
-            # Deploy via Swarm stack
+            # Deploy via Swarm stack (forçar update da imagem)
             docker stack deploy -c docker-compose.swarm.yml controle-de-producao --with-registry-auth
+            docker service update --force --image ${DOCKERHUB_USERNAME}/controle-producao:latest controle-de-producao_frontend
             
             # Aguardar container principal iniciar
             echo "Aguardando container do app ficar disponível..."
-            for i in $(seq 1 10); do
+            for i in $(seq 1 15); do
               CONTAINER_ID=$(docker ps --filter "name=controle-de-producao_frontend" -q | head -n1)
               if [ -n "$CONTAINER_ID" ]; then
-                break
+                # Verificar se container está realmente pronto
+                if docker exec "$CONTAINER_ID" test -f /app/dist/migrate.js; then
+                  echo "Container pronto!"
+                  break
+                fi
               fi
-              echo "Tentativa $i/10: container ainda não disponível, aguardando..."
+              echo "Tentativa $i/15: aguardando container ficar pronto..."
               sleep 6
             done
 
@@ -131,9 +136,9 @@ jobs:
               exit 1
             fi
 
-            # Executar migrations dentro do container
+            # Executar migrations dentro do container (usando script compilado)
             echo "Executando migrations do banco..."
-            docker exec "$CONTAINER_ID" npx tsx scripts/migrate.ts
+            docker exec "$CONTAINER_ID" node dist/migrate.js
             echo "Migrations executadas com sucesso."
 
             # Limpar imagens antigas
