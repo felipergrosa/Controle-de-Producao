@@ -230,6 +230,34 @@ export async function getUserById(userId: number): Promise<User | null> {
 }
 
 /**
+ * Atualiza dados do usuário
+ */
+export async function updateUser(
+  userId: number, 
+  data: { name?: string; email?: string; role?: 'user' | 'admin' }
+): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const updateData: Record<string, any> = {};
+  if (data.name !== undefined) updateData.name = data.name;
+  if (data.email !== undefined) updateData.email = data.email;
+  if (data.role !== undefined) updateData.role = data.role;
+
+  await db.update(users).set(updateData).where(eq(users.id, userId));
+}
+
+/**
+ * Deleta usuário
+ */
+export async function deleteUser(userId: number): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  await db.delete(users).where(eq(users.id, userId));
+}
+
+/**
  * Registra log de auditoria
  */
 export async function logAudit(

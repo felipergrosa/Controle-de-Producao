@@ -11,21 +11,35 @@ services:
       DATABASE_URL: mysql://root:${MYSQL_ROOT_PASSWORD}@controle-de-producao-backend:3306/${MYSQL_DATABASE}
       JWT_SECRET: ${JWT_SECRET}
       VITE_APP_TITLE: ${VITE_APP_TITLE:-Controle de Produção}
+      TZ: America/Sao_Paulo
+      DISABLE_AUTH: ${DISABLE_AUTH:-false}
     depends_on:
       backend:
         condition: service_healthy
     networks:
-      - app_network
+      - nobreluminarias
+    deploy:
+      labels:
+        traefik.enable: "true"
+        traefik.http.routers.controleproducao.rule: "Host(`${APP_DOMAIN}`)"
+        traefik.http.routers.controleproducao.entrypoints: "${TRAEFIK_ENTRYPOINT:-websecure}"
+        traefik.http.routers.controleproducao.tls.certresolver: "${TRAEFIK_CERT_RESOLVER:-letsencryptresolver}"
+        traefik.http.routers.controleproducao.service: "controleproducao"
+        traefik.http.services.controleproducao.loadbalancer.server.port: "5000"
+        traefik.http.services.controleproducao.loadbalancer.passHostHeader: "true"
+        traefik.http.middlewares.sslheader.headers.customrequestheaders.X-Forwarded-Proto: https
+        traefik.http.routers.controleproducao.middlewares: sslheader@docker
 
   backend:
     image: mysql:8.4
     container_name: controle-de-producao-backend
     restart: unless-stopped
+    ports:
+      - "${DB_PORT:-3306}:3306"
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
       MYSQL_DATABASE: ${MYSQL_DATABASE:-production_control}
-    ports:
-      - "${DB_PORT:-3306}:3306"
+      TZ: America/Sao_Paulo
     volumes:
       - db_data_prod:/var/lib/mysql
     healthcheck:
@@ -36,11 +50,12 @@ services:
       start_period: 30s
     command: --default-authentication-plugin=mysql_native_password
     networks:
-      - app_network
+      - nobreluminarias
 
 volumes:
   db_data_prod:
 
 networks:
-  app_network:
-    driver: bridge
+  nobreluminarias:
+    external: true
+    name: nobreluminarias

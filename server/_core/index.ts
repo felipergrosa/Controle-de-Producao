@@ -9,6 +9,7 @@ import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
 import { runMigrations } from "../migrations";
+import { ENV } from "./env";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -45,8 +46,10 @@ async function startServer() {
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
   // Cookie parser for session management
   app.use(cookieParser());
-  // OAuth callback under /api/oauth/callback
-  registerOAuthRoutes(app);
+  // OAuth callback under /api/oauth/callback (only if enabled)
+  if (ENV.oauthEnabled) {
+    registerOAuthRoutes(app);
+  }
   // tRPC API
   app.use(
     "/api/trpc",

@@ -26,8 +26,8 @@ export async function createContext(
     }
   }
 
-  // Se não tem sessão local, tentar OAuth (se habilitado)
-  if (!user && ENV.authEnabled) {
+  // Se não tem sessão local, tentar OAuth (apenas se oauthEnabled)
+  if (!user && ENV.oauthEnabled) {
     try {
       user = await sdk.authenticateRequest(opts.req);
     } catch (error) {

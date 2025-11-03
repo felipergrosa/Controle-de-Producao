@@ -1,4 +1,5 @@
 import { sql, eq, and, like, desc } from "drizzle-orm";
+import { alias } from "drizzle-orm/mysql-core";
 import { drizzle } from "drizzle-orm/mysql2";
 import mysql from "mysql2/promise";
 import { InsertUser, users, products, productionEntries, productionDaySnapshots, productHistory, Product, ProductionEntry, ProductionDaySnapshot, ProductHistory, InsertProductHistory } from "../drizzle/schema";
@@ -6,6 +7,12 @@ import { ENV } from './_core/env';
 
 let _db: ReturnType<typeof drizzle> | null = null;
 let pool: ReturnType<typeof mysql.createPool> | null = null;
+
+function toDateOnlyString(date: Date): string {
+  const copy = new Date(date);
+  copy.setHours(0, 0, 0, 0);
+  return copy.toISOString().split("T")[0];
+}
 
 // Lazily create the drizzle instance so local tooling can run without a DB.
 export async function getDb() {
@@ -34,6 +41,9 @@ export async function upsertUser(user: InsertUser): Promise<void> {
   if (!user.openId) {
     throw new Error("User openId is required for upsert");
   }
+  if (!user.email) {
+    throw new Error("User email is required for upsert");
+  }
 
   const db = await getDb();
   if (!db) {
@@ -44,10 +54,11 @@ export async function upsertUser(user: InsertUser): Promise<void> {
   try {
     const values: InsertUser = {
       openId: user.openId,
+      email: user.email,
     };
     const updateSet: Record<string, unknown> = {};
 
-    const textFields = ["name", "email", "loginMethod"] as const;
+    const textFields = ["name", "loginMethod"] as const;
     type TextField = (typeof textFields)[number];
 
     const assignNullable = (field: TextField) => {
@@ -173,17 +184,34 @@ export async function createOrUpdateProduct(code: string, description: string, p
 }
 
 // Production entries queries
-export async function getProductionEntriesByDate(sessionDate: Date): Promise<ProductionEntry[]> {
+export async function getProductionEntriesByDate(sessionDate: Date): Promise<(ProductionEntry & {
+  createdByName?: string | null;
+  checkedByName?: string | null;
+})[]> {
   const db = await getDb();
   if (!db) return [];
   
   const dateStr = new Date(sessionDate).toISOString().split('T')[0];
+  const createdByUser = alias(users, "createdByUser");
+  const checkedByUser = alias(users, "checkedByUser");
+
   const result = await db
-    .select()
+    .select({
+      entry: productionEntries,
+      createdByName: createdByUser.name,
+      checkedByName: checkedByUser.name,
+    })
     .from(productionEntries)
+    .leftJoin(createdByUser, eq(productionEntries.createdBy, createdByUser.id))
+    .leftJoin(checkedByUser, eq(productionEntries.checkedBy, checkedByUser.id))
     .where(sql`CAST(${productionEntries.sessionDate} AS CHAR) = ${dateStr}`)
     .orderBy(desc(productionEntries.insertedAt));
-  return result;
+
+  return result.map(({ entry, createdByName, checkedByName }) => ({
+    ...entry,
+    createdByName: createdByName ?? null,
+    checkedByName: checkedByName ?? null,
+  }));
 }
 
 export async function getProductionEntryByProductAndDate(productId: string, sessionDate: Date): Promise<ProductionEntry | undefined> {
@@ -225,14 +253,14 @@ export async function getTodayProductionSummary(sessionDate: Date): Promise<{ to
 export async function getSnapshotByDate(sessionDate: Date): Promise<ProductionDaySnapshot | undefined> {
   const db = await getDb();
   if (!db) return undefined;
-  
-  const dateStr = new Date(sessionDate).toISOString().split('T')[0];
+
+  const dateStr = toDateOnlyString(sessionDate);
   const result = await db
     .select()
     .from(productionDaySnapshots)
-    .where(eq(productionDaySnapshots.sessionDate, new Date(dateStr)))
+    .where(eq(productionDaySnapshots.sessionDate, dateStr as any))
     .limit(1);
-  
+
   return result.length > 0 ? result[0] : undefined;
 }
 
@@ -243,7 +271,7 @@ export async function addProductHistory(
   quantity: number,
   type: "production" | "adjustment" | "import" = "production",
   notes?: string,
-  createdBy?: string
+  createdBy?: number | string
 ): Promise<ProductHistory> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
@@ -251,18 +279,28 @@ export async function addProductHistory(
   const id = crypto.randomUUID();
   const now = new Date();
   
+  // Converter createdBy para number se for string
+  const createdByNum = createdBy != null
+    ? (typeof createdBy === 'string'
+        ? (isNaN(parseInt(createdBy)) ? undefined : parseInt(createdBy))
+        : createdBy)
+    : undefined;
+  // Garantir quantidade inteira (tabela armazena int)
+  const qtyNumRaw = typeof quantity === 'number' ? quantity : Number((quantity as unknown as string) ?? 0);
+  const qtyNum = Number.isFinite(qtyNumRaw) ? Math.round(qtyNumRaw) : 0;
+  
   await db.insert(productHistory).values({
     id,
     productId,
     productCode,
-    quantity,
+    quantity: qtyNum,
     type,
     notes,
-    createdBy,
+    createdBy: createdByNum,
     createdAt: now,
   });
   
-  return { id, productId, productCode, quantity, type, notes: notes ?? null, createdBy: createdBy ?? null, createdAt: now };
+  return { id, productId, productCode, quantity: qtyNum, type, notes: notes ?? null, createdBy: createdByNum ?? null, createdAt: now };
 }
 
 export async function getProductHistory(productId: string): Promise<ProductHistory[]> {
@@ -320,7 +358,10 @@ export async function getProductionByDateRange(startDate: Date, endDate: Date): 
   if (!db) return [];
   
   const { sql } = await import("drizzle-orm");
+  const start = toDateOnlyString(startDate);
+  const end = toDateOnlyString(endDate);
   
+  // Apenas snapshots finalizados
   return await db
     .select({
       date: productionDaySnapshots.sessionDate,
@@ -329,7 +370,7 @@ export async function getProductionByDateRange(startDate: Date, endDate: Date): 
     })
     .from(productionDaySnapshots)
     .where(
-      sql`${productionDaySnapshots.sessionDate} >= ${startDate} AND ${productionDaySnapshots.sessionDate} <= ${endDate}`
+      sql`${productionDaySnapshots.sessionDate} >= ${start} AND ${productionDaySnapshots.sessionDate} <= ${end} AND ${productionDaySnapshots.isOpen} = 0`
     )
     .orderBy(productionDaySnapshots.sessionDate);
 }
@@ -339,6 +380,8 @@ export async function getTopProductsByQuantity(startDate: Date, endDate: Date, l
   if (!db) return [];
   
   const { sql } = await import("drizzle-orm");
+  const start = toDateOnlyString(startDate);
+  const end = toDateOnlyString(endDate);
   
   const rows = await db
     .select({
@@ -349,7 +392,7 @@ export async function getTopProductsByQuantity(startDate: Date, endDate: Date, l
     })
     .from(productionEntries)
     .where(
-      sql`${productionEntries.sessionDate} >= ${startDate} AND ${productionEntries.sessionDate} <= ${endDate}`
+      sql`${productionEntries.sessionDate} >= ${start} AND ${productionEntries.sessionDate} <= ${end}`
     )
     .groupBy(productionEntries.productCode, productionEntries.productDescription)
     .orderBy(sql`SUM(${productionEntries.quantity}) DESC`)
@@ -373,6 +416,8 @@ export async function getProductionStats(startDate: Date, endDate: Date): Promis
   };
   
   const { sql } = await import("drizzle-orm");
+  const start = toDateOnlyString(startDate);
+  const end = toDateOnlyString(endDate);
   
   const result = await db
     .select({
@@ -382,7 +427,7 @@ export async function getProductionStats(startDate: Date, endDate: Date): Promis
     })
     .from(productionEntries)
     .where(
-      sql`${productionEntries.sessionDate} >= ${startDate} AND ${productionEntries.sessionDate} <= ${endDate}`
+      sql`${productionEntries.sessionDate} >= ${start} AND ${productionEntries.sessionDate} <= ${end}`
     );
 
   const summary = result.length > 0 ? result[0] : null;
@@ -405,6 +450,8 @@ export async function getDailyProductionTrend(startDate: Date, endDate: Date): P
   if (!db) return [];
   
   const { sql } = await import("drizzle-orm");
+  const start = toDateOnlyString(startDate);
+  const end = toDateOnlyString(endDate);
   
   const rows = await db
     .select({
@@ -414,7 +461,7 @@ export async function getDailyProductionTrend(startDate: Date, endDate: Date): P
     })
     .from(productionEntries)
     .where(
-      sql`${productionEntries.sessionDate} >= ${startDate} AND ${productionEntries.sessionDate} <= ${endDate}`
+      sql`${productionEntries.sessionDate} >= ${start} AND ${productionEntries.sessionDate} <= ${end}`
     )
     .groupBy(sql`DATE(${productionEntries.sessionDate})`)
     .orderBy(sql`DATE(${productionEntries.sessionDate})`);
@@ -506,4 +553,516 @@ export async function getProductionByType(startDate: Date, endDate: Date): Promi
       sql`${productHistory.createdAt} >= ${startDate} AND ${productHistory.createdAt} <= ${endDate}`
     )
     .groupBy(productHistory.type);
+}
+
+// Advanced Analytics Queries
+
+// Taxa de Conferência
+export async function getCheckRateStats(startDate: Date, endDate: Date): Promise<any> {
+  const db = await getDb();
+  if (!db) return { totalItems: 0, checkedItems: 0, checkRate: 0 };
+  
+  const { sql } = await import("drizzle-orm");
+  const start = toDateOnlyString(startDate);
+  const end = toDateOnlyString(endDate);
+  
+  const result = await db
+    .select({
+      totalItems: sql<number>`COUNT(*)`,
+      checkedItems: sql<number>`SUM(CASE WHEN ${productionEntries.checked} = 1 THEN 1 ELSE 0 END)`,
+    })
+    .from(productionEntries)
+    .where(
+      sql`${productionEntries.sessionDate} >= ${start} AND ${productionEntries.sessionDate} <= ${end}`
+    );
+  
+  const data = result[0];
+  const totalItems = Number(data?.totalItems ?? 0);
+  const checkedItems = Number(data?.checkedItems ?? 0);
+  const checkRate = totalItems > 0 ? (checkedItems / totalItems) * 100 : 0;
+  
+  return { totalItems, checkedItems, checkRate };
+}
+
+// Comparação com período anterior
+export async function getPeriodComparison(startDate: Date, endDate: Date): Promise<any> {
+  const db = await getDb();
+  if (!db) return null;
+  
+  const periodDays = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
+  const previousStart = new Date(startDate);
+  previousStart.setDate(previousStart.getDate() - periodDays);
+  const previousEnd = new Date(startDate);
+  previousEnd.setDate(previousEnd.getDate() - 1);
+  
+  const currentStats = await getProductionStats(startDate, endDate);
+  const previousStats = await getProductionStats(previousStart, previousEnd);
+  
+  const calcChange = (current: number, previous: number) => {
+    if (previous === 0) return current > 0 ? 100 : 0;
+    return ((current - previous) / previous) * 100;
+  };
+  
+  return {
+    current: currentStats,
+    previous: previousStats,
+    changes: {
+      totalQuantity: calcChange(currentStats.totalQuantity, previousStats.totalQuantity),
+      totalItems: calcChange(currentStats.totalItems, previousStats.totalItems),
+      uniqueProducts: calcChange(currentStats.uniqueProducts, previousStats.uniqueProducts),
+      averagePerDay: calcChange(currentStats.averagePerDay, previousStats.averagePerDay),
+    },
+  };
+}
+
+// Dias produtivos
+export async function getProductiveDays(startDate: Date, endDate: Date): Promise<any> {
+  const db = await getDb();
+  if (!db) return { productiveDays: 0, totalDays: 0, rate: 0 };
+  
+  const { sql } = await import("drizzle-orm");
+  const start = toDateOnlyString(startDate);
+  const end = toDateOnlyString(endDate);
+  
+  const result = await db
+    .select({
+      productiveDays: sql<number>`COUNT(DISTINCT ${productionEntries.sessionDate})`,
+    })
+    .from(productionEntries)
+    .where(
+      sql`${productionEntries.sessionDate} >= ${start} AND ${productionEntries.sessionDate} <= ${end}`
+    );
+  
+  const totalDays = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+  const productiveDays = Number(result[0]?.productiveDays ?? 0);
+  const rate = totalDays > 0 ? (productiveDays / totalDays) * 100 : 0;
+  
+  return { productiveDays, totalDays, rate };
+}
+
+// Análise ABC (Pareto)
+export async function getABCAnalysis(startDate: Date, endDate: Date): Promise<any> {
+  const db = await getDb();
+  if (!db) return [];
+  
+  const { sql } = await import("drizzle-orm");
+  const start = toDateOnlyString(startDate);
+  const end = toDateOnlyString(endDate);
+  
+  const products = await db
+    .select({
+      code: productionEntries.productCode,
+      description: productionEntries.productDescription,
+      totalQuantity: sql<number>`SUM(${productionEntries.quantity})`,
+    })
+    .from(productionEntries)
+    .where(
+      sql`${productionEntries.sessionDate} >= ${start} AND ${productionEntries.sessionDate} <= ${end}`
+    )
+    .groupBy(productionEntries.productCode, productionEntries.productDescription)
+    .orderBy(sql`SUM(${productionEntries.quantity}) DESC`);
+  
+  const total = products.reduce((sum, p) => sum + Number(p.totalQuantity ?? 0), 0);
+  let accumulated = 0;
+  
+  return products.map((p) => {
+    const quantity = Number(p.totalQuantity ?? 0);
+    const percentage = total > 0 ? (quantity / total) * 100 : 0;
+    accumulated += percentage;
+    
+    let classification = 'C';
+    if (accumulated <= 80) classification = 'A';
+    else if (accumulated <= 95) classification = 'B';
+    
+    return {
+      code: p.code,
+      description: p.description,
+      totalQuantity: quantity,
+      percentage,
+      accumulated,
+      classification,
+    };
+  });
+}
+
+// Produtos sem movimento
+export async function getInactiveProducts(days: number = 30): Promise<any[]> {
+  const db = await getDb();
+  if (!db) return [];
+  
+  const { sql } = await import("drizzle-orm");
+  const cutoffDate = new Date();
+  cutoffDate.setDate(cutoffDate.getDate() - days);
+  const cutoff = toDateOnlyString(cutoffDate);
+  
+  // Produtos que nunca foram produzidos ou não foram produzidos recentemente
+  const allProducts = await db.select().from(products);
+  const recentProduction = await db
+    .select({
+      productCode: productionEntries.productCode,
+      lastDate: sql<string>`MAX(${productionEntries.sessionDate})`,
+    })
+    .from(productionEntries)
+    .where(sql`${productionEntries.sessionDate} >= ${cutoff}`)
+    .groupBy(productionEntries.productCode);
+  
+  const recentCodes = new Set(recentProduction.map(p => p.productCode));
+  
+  return allProducts
+    .filter(p => !recentCodes.has(p.code))
+    .map(p => ({
+      code: p.code,
+      description: p.description,
+      lastProducedAt: p.lastProducedAt,
+      daysInactive: p.lastProducedAt 
+        ? Math.floor((new Date().getTime() - new Date(p.lastProducedAt).getTime()) / (1000 * 60 * 60 * 24))
+        : null,
+    }));
+}
+
+// Variabilidade de produção por produto
+export async function getProductVariability(startDate: Date, endDate: Date): Promise<any[]> {
+  const db = await getDb();
+  if (!db) return [];
+  
+  const { sql } = await import("drizzle-orm");
+  const start = toDateOnlyString(startDate);
+  const end = toDateOnlyString(endDate);
+  
+  const result = await db
+    .select({
+      code: productionEntries.productCode,
+      description: productionEntries.productDescription,
+      avgQuantity: sql<number>`AVG(${productionEntries.quantity})`,
+      stdDev: sql<number>`STDDEV(${productionEntries.quantity})`,
+      minQuantity: sql<number>`MIN(${productionEntries.quantity})`,
+      maxQuantity: sql<number>`MAX(${productionEntries.quantity})`,
+      count: sql<number>`COUNT(*)`,
+    })
+    .from(productionEntries)
+    .where(
+      sql`${productionEntries.sessionDate} >= ${start} AND ${productionEntries.sessionDate} <= ${end}`
+    )
+    .groupBy(productionEntries.productCode, productionEntries.productDescription)
+    .having(sql`COUNT(*) > 1`);
+  
+  return result.map((r) => ({
+    code: r.code,
+    description: r.description,
+    avgQuantity: Number(r.avgQuantity ?? 0),
+    stdDev: Number(r.stdDev ?? 0),
+    minQuantity: Number(r.minQuantity ?? 0),
+    maxQuantity: Number(r.maxQuantity ?? 0),
+    count: Number(r.count ?? 0),
+    coefficient: Number(r.avgQuantity ?? 0) > 0 ? (Number(r.stdDev ?? 0) / Number(r.avgQuantity ?? 0)) * 100 : 0,
+  }));
+}
+
+// Alertas do sistema
+export async function getSystemAlerts(): Promise<any[]> {
+  const db = await getDb();
+  if (!db) return [];
+  
+  const alerts = [];
+  
+  // Dias não finalizados
+  const { sql } = await import("drizzle-orm");
+  const last7Days = new Date();
+  last7Days.setDate(last7Days.getDate() - 7);
+  const start = toDateOnlyString(last7Days);
+  const today = toDateOnlyString(new Date());
+  
+  const unfinalizedDays = await db
+    .select({
+      sessionDate: productionEntries.sessionDate,
+      totalItems: sql<number>`COUNT(*)`,
+    })
+    .from(productionEntries)
+    .where(sql`${productionEntries.sessionDate} >= ${start} AND ${productionEntries.sessionDate} < ${today}`)
+    .groupBy(productionEntries.sessionDate);
+  
+  const finalizedDates = await db
+    .select({ sessionDate: productionDaySnapshots.sessionDate })
+    .from(productionDaySnapshots)
+    .where(sql`${productionDaySnapshots.sessionDate} >= ${start}`);
+  
+  const finalizedSet = new Set(finalizedDates.map(d => d.sessionDate.toString()));
+  
+  unfinalizedDays.forEach((day) => {
+    if (!finalizedSet.has(day.sessionDate.toString())) {
+      alerts.push({
+        type: 'critical',
+        category: 'finalization',
+        message: `Dia ${day.sessionDate} não finalizado`,
+        date: day.sessionDate,
+        itemCount: Number(day.totalItems ?? 0),
+      });
+    }
+  });
+  
+  // Produtos sem movimento recente
+  
+  
+  // Taxa de conferência baixa
+  const last30Days = new Date();
+  last30Days.setDate(last30Days.getDate() - 30);
+  const checkStats = await getCheckRateStats(last30Days, new Date());
+  if (checkStats.checkRate < 80) {
+    alerts.push({
+      type: 'warning',
+      category: 'check_rate',
+      message: `Taxa de conferência baixa: ${checkStats.checkRate.toFixed(1)}%`,
+      checkRate: checkStats.checkRate,
+    });
+  }
+  
+  return alerts;
+}
+
+// Heatmap semanal
+export async function getWeeklyHeatmap(startDate: Date, endDate: Date): Promise<any[]> {
+  const db = await getDb();
+  if (!db) return [];
+  
+  const { sql } = await import("drizzle-orm");
+  const start = toDateOnlyString(startDate);
+  const end = toDateOnlyString(endDate);
+  
+  const result = await db
+    .select({
+      dayOfWeek: sql<number>`DAYOFWEEK(${productionEntries.sessionDate})`,
+      hour: sql<number>`HOUR(${productionEntries.insertedAt})`,
+      totalQuantity: sql<number>`SUM(${productionEntries.quantity})`,
+      count: sql<number>`COUNT(*)`,
+    })
+    .from(productionEntries)
+    .where(
+      sql`${productionEntries.sessionDate} >= ${start} AND ${productionEntries.sessionDate} <= ${end}`
+    )
+    .groupBy(sql`DAYOFWEEK(${productionEntries.sessionDate})`, sql`HOUR(${productionEntries.insertedAt})`);
+  
+  return result.map((r) => ({
+    dayOfWeek: Number(r.dayOfWeek ?? 0),
+    hour: Number(r.hour ?? 0),
+    totalQuantity: Number(r.totalQuantity ?? 0),
+    count: Number(r.count ?? 0),
+  }));
+}
+
+// Taxa de conferência por dia (sparkline)
+export async function getCheckRateTrend(startDate: Date, endDate: Date): Promise<any[]> {
+  const db = await getDb();
+  if (!db) return [];
+  
+  const { sql } = await import("drizzle-orm");
+  const start = toDateOnlyString(startDate);
+  const end = toDateOnlyString(endDate);
+  
+  const result = await db
+    .select({
+      date: sql<string>`DATE(${productionEntries.sessionDate})`,
+      totalItems: sql<number>`COUNT(*)`,
+      checkedItems: sql<number>`SUM(CASE WHEN ${productionEntries.checked} = 1 THEN 1 ELSE 0 END)`,
+    })
+    .from(productionEntries)
+    .where(
+      sql`${productionEntries.sessionDate} >= ${start} AND ${productionEntries.sessionDate} <= ${end}`
+    )
+    .groupBy(sql`DATE(${productionEntries.sessionDate})`);
+  
+  return result.map((r) => {
+    const totalItems = Number(r.totalItems ?? 0);
+    const checkedItems = Number(r.checkedItems ?? 0);
+    return {
+      date: r.date,
+      totalItems,
+      checkedItems,
+      checkRate: totalItems > 0 ? (checkedItems / totalItems) * 100 : 0,
+    };
+  });
+}
+
+// Production Day Management Functions
+
+// Verificar se pode finalizar o dia (após 16h)
+export function canFinalizeDay(sessionDate: Date): { canFinalize: boolean; reason?: string } {
+  const now = new Date();
+  const session = new Date(sessionDate);
+  
+  // Normalizar datas para comparação
+  session.setHours(0, 0, 0, 0);
+  const today = new Date(now);
+  today.setHours(0, 0, 0, 0);
+  
+  // Se é dia futuro, não pode finalizar
+  if (session > today) {
+    return { canFinalize: false, reason: 'Não é possível finalizar dias futuros' };
+  }
+  
+  // Se é dia passado, pode finalizar
+  if (session < today) {
+    return { canFinalize: true };
+  }
+  
+  return { canFinalize: true };
+}
+
+// Finalizar dia de produção
+export async function finalizeProductionDay(
+  sessionDate: Date,
+  entries: any[],
+  userId: number,
+  userEmail: string
+): Promise<any> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  // Verificar se pode finalizar
+  const validation = canFinalizeDay(sessionDate);
+  if (!validation.canFinalize) {
+    throw new Error(validation.reason);
+  }
+  
+  const dateStr = toDateOnlyString(sessionDate);
+  
+  // Verificar se já existe snapshot
+  const existing = await getSnapshotByDate(sessionDate);
+  if (existing && !existing.isOpen) {
+    throw new Error("Dia já finalizado. Solicite reabertura a um administrador.");
+  }
+  
+  const id = crypto.randomUUID();
+  const now = new Date();
+  const enrichedEntries = await getProductionEntriesByDate(sessionDate);
+  
+  const snapshot = {
+    id,
+    sessionDate: dateStr as any,
+    totalItems: entries.length,
+    totalQuantity: entries.reduce((sum, e) => sum + e.quantity, 0),
+    payloadJson: JSON.stringify(enrichedEntries),
+    createdBy: userId,
+    createdAt: now,
+    finalizedAt: now,
+    finalizedBy: userEmail,
+    isOpen: false,
+  };
+  
+  if (existing) {
+    // Atualizar snapshot existente
+    await db
+      .update(productionDaySnapshots)
+      .set(snapshot)
+      .where(eq(productionDaySnapshots.sessionDate, dateStr as any));
+  } else {
+    // Criar novo snapshot
+    await db.insert(productionDaySnapshots).values(snapshot);
+  }
+  
+  // Registrar no histórico de produtos
+  for (const entry of entries) {
+    await addProductHistory(
+      entry.productId || crypto.randomUUID(),
+      entry.code,
+      entry.quantity,
+      'production',
+      `Finalização do dia ${dateStr}`,
+      userId
+    );
+  }
+  
+  return snapshot;
+}
+
+// Reabrir dia de produção (somente admin)
+export async function reopenProductionDay(
+  sessionDate: Date,
+  adminId: number,
+  adminEmail: string
+): Promise<any> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  const dateStr = toDateOnlyString(sessionDate);
+  
+  // Buscar snapshot
+  const snapshot = await getSnapshotByDate(sessionDate);
+  if (!snapshot) {
+    throw new Error("Dia não encontrado");
+  }
+  
+  if (snapshot.isOpen) {
+    throw new Error("Dia já está aberto");
+  }
+  
+  const now = new Date();
+  
+  // Reabrir snapshot
+  await db
+    .update(productionDaySnapshots)
+    .set({
+      isOpen: true,
+      reopenedAt: now,
+      reopenedBy: adminEmail,
+    })
+    .where(eq(productionDaySnapshots.sessionDate, dateStr as any));
+  
+  // Restaurar entries do payload
+  const entries = JSON.parse(snapshot.payloadJson as string);
+
+  // Limpar entries antigas se existirem
+  await db
+    .delete(productionEntries)
+    .where(eq(productionEntries.sessionDate, dateStr as any));
+
+  // Recriar entries
+  for (const entry of entries) {
+    const productId = entry.productId ?? entry.product_id ?? crypto.randomUUID();
+    const productCode = entry.productCode ?? entry.code ?? entry.product_code ?? "";
+    const productDescription = entry.productDescription ?? entry.description ?? entry.product_description ?? "";
+    const photoUrl = entry.photoUrl ?? entry.photo_url ?? null;
+    const quantity = Number(entry.quantity ?? 0);
+    const insertedAt = entry.insertedAt ?? entry.inserted_at ?? now;
+    const createdBy = entry.createdBy ?? entry.created_by ?? adminId ?? null;
+    const checkedBy = entry.checkedBy ?? entry.checked_by ?? null;
+    const checkedAtRaw = entry.checkedAt ?? entry.checked_at ?? null;
+    const checkedAt = checkedAtRaw ? new Date(checkedAtRaw) : null;
+
+    if (!productCode) {
+      throw new Error("Código do produto ausente no snapshot. Não foi possível reabrir o dia.");
+    }
+
+    await db.insert(productionEntries).values({
+      id: crypto.randomUUID(),
+      productId,
+      productCode,
+      productDescription,
+      photoUrl,
+      quantity,
+      insertedAt: new Date(insertedAt),
+      checked: !!entry.checked,
+      sessionDate: dateStr as any,
+      createdBy: createdBy ?? null,
+      checkedBy: checkedBy ?? null,
+      checkedAt,
+    });
+  }
+
+  return { success: true, reopenedAt: now };
+}
+
+// Verificar status do dia
+export async function getDayStatus(sessionDate: Date): Promise<any> {
+  const db = await getDb();
+  if (!db) return { isOpen: true, canFinalize: false };
+
+  const snapshot = await getSnapshotByDate(sessionDate);
+  const validation = canFinalizeDay(sessionDate);
+
+  return {
+    isOpen: snapshot ? snapshot.isOpen : true,
+    canFinalize: validation.canFinalize,
+    reason: validation.reason,
+    snapshot: snapshot || null,
+  };
 }

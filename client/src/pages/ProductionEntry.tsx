@@ -3,10 +3,10 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Trash2, AlertCircle, CheckCircle, Circle, ScanLine } from "lucide-react";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Trash2, AlertCircle, CheckCircle, Circle, ScanLine, Calendar, X, Search } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { format } from "date-fns";
@@ -29,7 +29,13 @@ export default function ProductionEntry() {
   const { user } = useAuth();
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  const todayStr = format(today, "dd/MM/yy", { locale: ptBR });
+  
+  const [customDate, setCustomDate] = useState<Date | null>(null);
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [dateInputValue, setDateInputValue] = useState("");
+  
+  const targetDate = customDate || today;
+  const targetDateStr = format(targetDate, "dd/MM/yy", { locale: ptBR });
 
   const [searchQuery, setSearchQuery] = useState("");
   const [partialSearch, setPartialSearch] = useState(false);
@@ -47,13 +53,22 @@ export default function ProductionEntry() {
   // Utils para invalidação de cache
   const utils = trpc.useUtils();
 
+  // Verificar se o dia está aberto
+  const { data: dayStatus } = trpc.snapshots.getStatus.useQuery(
+    { date: targetDate }
+  );
+
+  const isDayOpen = dayStatus?.isOpen ?? true;
+  const isDayFinalized = !isDayOpen;
+
   // Queries
   const { data: summary = { totalItems: 0, totalQuantity: 0 } } = trpc.productionEntries.getSummary.useQuery(
-    { date: today }
+    { date: targetDate }
   );
 
   const { data: entriesData } = trpc.productionEntries.getByDate.useQuery(
-    { date: today }
+    { date: targetDate },
+    { enabled: isDayOpen }
   );
   const safeEntriesData = entriesData && Array.isArray(entriesData) ? entriesData : [];
 
@@ -161,6 +176,11 @@ export default function ProductionEntry() {
       return;
     }
 
+    if (isDayFinalized) {
+      toast.error("Não é possível adicionar itens em dia finalizado");
+      return;
+    }
+
     try {
       await addEntryMutation.mutateAsync({
         productId: selectedProduct.id,
@@ -168,7 +188,7 @@ export default function ProductionEntry() {
         productDescription: selectedProduct.description,
         photoUrl: selectedProduct.photoUrl || undefined,
         quantity: qty,
-        sessionDate: today,
+        sessionDate: targetDate,
         grouping: true,
       });
 
@@ -225,6 +245,15 @@ export default function ProductionEntry() {
     }
   };
 
+  const focusSearchInput = () => {
+    setTimeout(() => searchInputRef.current?.focus(), 100);
+  };
+
+  const handleCloseNotFoundModal = () => {
+    setShowNotFoundModal(false);
+    focusSearchInput();
+  };
+
   useEffect(() => {
     if (!barcodeMode) {
       resetBarcodeBuffer();
@@ -270,6 +299,10 @@ export default function ProductionEntry() {
   }, [barcodeMode]);
 
   const toggleBarcodeMode = () => {
+    if (isDayFinalized) {
+      toast.error("Não é possível usar modo leitor em dia finalizado");
+      return;
+    }
     setBarcodeMode((prev) => {
       const next = !prev;
       resetBarcodeBuffer();
@@ -283,7 +316,36 @@ export default function ProductionEntry() {
     });
   };
 
+  const handleDateSelection = () => {
+    if (!dateInputValue) {
+      toast.error("Selecione uma data");
+      return;
+    }
+    const selectedDate = new Date(dateInputValue + "T00:00:00");
+    setCustomDate(selectedDate);
+    setShowDatePicker(false);
+    toast.success(`Data alterada para ${format(selectedDate, "dd/MM/yyyy", { locale: ptBR })}`);
+  };
+
+  const handleClearCustomDate = () => {
+    setCustomDate(null);
+    setDateInputValue("");
+    toast.info("Voltando para o dia de hoje");
+  };
+
+  const togglePartialSearch = () => {
+    if (isDayFinalized) {
+      toast.error("Não é possível usar busca parcial em dia finalizado");
+      return;
+    }
+    setPartialSearch((prev) => !prev);
+  };
+
   const handleToggleChecked = async (item: ProductionItem) => {
+    if (isDayFinalized) {
+      toast.error("Não é possível alterar itens em dia finalizado");
+      return;
+    }
     try {
       await updateEntryMutation.mutateAsync({
         id: item.id,
@@ -295,6 +357,10 @@ export default function ProductionEntry() {
   };
 
   const handleDeleteItem = async (item: ProductionItem) => {
+    if (isDayFinalized) {
+      toast.error("Não é possível remover itens em dia finalizado");
+      return;
+    }
     try {
       await deleteEntryMutation.mutateAsync({ id: item.id });
       toast.success("Item removido");
@@ -308,53 +374,98 @@ export default function ProductionEntry() {
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold">Lançamento de Produção</h1>
-        <p className="text-muted-foreground mt-2">Registre a produção do dia</p>
+        <p className="text-muted-foreground mt-2">
+          Registre a produção do dia {targetDateStr}
+        </p>
       </div>
 
+      {/* Alerta de dia finalizado */}
+      {isDayFinalized && (
+        <Alert variant="destructive">
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription>
+            Este dia está finalizado. Não é possível adicionar ou editar itens. Solicite a reabertura a um administrador.
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {/* Alerta de data customizada */}
+      {customDate && (
+        <Alert className="border-blue-200 bg-blue-50">
+          <Calendar className="h-4 w-4 text-blue-600" />
+          <AlertDescription className="flex items-center justify-between">
+            <span className="text-blue-900">
+              Lançando produção para: <strong>{format(customDate, "dd/MM/yyyy", { locale: ptBR })}</strong>
+            </span>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleClearCustomDate}
+              className="h-8 px-2"
+            >
+              <X className="h-4 w-4" />
+              Voltar para hoje
+            </Button>
+          </AlertDescription>
+        </Alert>
+      )}
+
       {/* Search Section */}
-      <Card>
-        <CardContent className="pt-4 space-y-3">
+      <Card className="border border-border/60 shadow-none">
+        <CardContent className="p-3 space-y-2">
           <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-            <div className="flex items-center gap-2">
-              <Checkbox
-                id="partial-search"
-                checked={partialSearch}
-                onCheckedChange={(checked) => setPartialSearch(checked as boolean)}
-              />
-              <Label htmlFor="partial-search" className="cursor-pointer text-sm">Busca parcial</Label>
-            </div>
-            <div className="flex items-center gap-2">
+            <Label htmlFor="search" className="text-base font-semibold">Buscar Produto</Label>
+            <div className="flex flex-wrap items-center justify-end gap-2">
               {barcodeMode && <Badge variant="secondary">Modo leitor ativo</Badge>}
               <Button
                 type="button"
                 variant={barcodeMode ? "default" : "outline"}
                 onClick={toggleBarcodeMode}
+                disabled={isDayFinalized}
                 className="whitespace-nowrap"
+                size="sm"
               >
                 <ScanLine className="mr-2 h-4 w-4" />
-                {barcodeMode ? "Desativar leitor" : "Modo leitor"}
+                Modo leitor
+              </Button>
+              <Button
+                type="button"
+                variant={customDate ? "default" : "outline"}
+                onClick={() => setShowDatePicker(true)}
+                className="whitespace-nowrap"
+                size="sm"
+              >
+                <Calendar className="mr-2 h-4 w-4" />
+                Escolher data
+              </Button>
+              <Button
+                type="button"
+                variant={partialSearch ? "default" : "outline"}
+                onClick={togglePartialSearch}
+                className="whitespace-nowrap"
+                size="sm"
+                disabled={isDayFinalized}
+              >
+                <Search className="mr-2 h-4 w-4" />
+                Busca parcial
               </Button>
             </div>
           </div>
 
-          <div>
-            <Label htmlFor="search" className="text-base font-semibold">Buscar Produto</Label>
-            <div className="mt-2">
-              <Input
-                id="search"
-                ref={searchInputRef}
-                placeholder="Digite código ou descrição sobre o pressione Enter"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                onKeyDown={handleKeyDown}
-                className="text-base"
-              />
-            </div>
-          </div>
+          <Input
+            id="search"
+            ref={searchInputRef}
+            placeholder="Digite código ou descrição e pressione Enter"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            onKeyDown={handleKeyDown}
+            className="text-base w-full"
+            disabled={isDayFinalized}
+          />
 
           {/* Resultados da busca parcial */}
           {partialSearch && searchQuery.length >= 2 && (
-            <div className="border-t pt-4">
+            <div className="border-t pt-3">
               {searchResults.length === 0 ? (
                 <p className="text-sm text-muted-foreground text-center py-4">Nenhum produto encontrado</p>
               ) : (
@@ -388,8 +499,47 @@ export default function ProductionEntry() {
         </CardContent>
       </Card>
 
+      {/* Date Picker Modal */}
+      <Dialog open={showDatePicker} onOpenChange={setShowDatePicker}>
+        <DialogContent className="w-full max-w-[300px]">
+          <DialogHeader>
+            <DialogTitle>Escolher Data de Lançamento</DialogTitle>
+            <DialogDescription>
+              Selecione a data em que deseja lançar a produção. Não é possível lançar em dias finalizados.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <Label htmlFor="date-input">Data</Label>
+            <Input
+              id="date-input"
+              type="date"
+              value={dateInputValue}
+              onChange={(e) => setDateInputValue(e.target.value)}
+              max={format(today, "yyyy-MM-dd")}
+              className="mt-2"
+            />
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setShowDatePicker(false)}>
+              Cancelar
+            </Button>
+            <Button onClick={handleDateSelection}>
+              Confirmar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Not Found Modal */}
-      <Dialog open={showNotFoundModal} onOpenChange={setShowNotFoundModal}>
+      <Dialog
+        open={showNotFoundModal}
+        onOpenChange={(open) => {
+          setShowNotFoundModal(open);
+          if (!open) {
+            focusSearchInput();
+          }
+        }}
+      >
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Produto Não Encontrado</DialogTitle>
@@ -406,7 +556,7 @@ export default function ProductionEntry() {
             </div>
           </div>
           <DialogFooter>
-            <Button onClick={() => setShowNotFoundModal(false)}>Fechar</Button>
+            <Button onClick={handleCloseNotFoundModal}>Fechar</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -416,8 +566,13 @@ export default function ProductionEntry() {
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Informar Quantidade</DialogTitle>
-            <DialogDescription className="text-base">
-              {selectedProduct?.code} - {selectedProduct?.description}
+            <DialogDescription className="space-y-1">
+              <span className="block text-lg font-semibold text-primary">
+                {selectedProduct?.code}
+              </span>
+              <span className="block text-sm leading-snug text-muted-foreground">
+                {selectedProduct?.description}
+              </span>
             </DialogDescription>
           </DialogHeader>
           <div>
@@ -427,6 +582,8 @@ export default function ProductionEntry() {
               ref={quantityInputRef}
               type="number"
               min="1"
+              inputMode="numeric"
+              pattern="[0-9]*"
               value={quantity}
               onChange={(e) => setQuantity(e.target.value)}
               onKeyDown={handleQuantityKeyDown}
@@ -460,7 +617,7 @@ export default function ProductionEntry() {
           <div className="mb-4">
             <h2 className="text-xl font-bold">Itens Lançados</h2>
             <div className="text-sm text-muted-foreground mt-1">
-              Produção de {todayStr}
+              Produção de {targetDateStr}
             </div>
             <div className="text-sm mt-1">
               <span className="font-semibold">QUANTIDADE:</span> {summary.totalItems} |
@@ -480,11 +637,10 @@ export default function ProductionEntry() {
                   <TableRow>
                     <TableHead className="w-[120px]">Código</TableHead>
                     <TableHead>Descrição</TableHead>
-                    <TableHead className="w-[80px] text-center">Qtd</TableHead>
-                    <TableHead className="w-[200px]">Inserido em</TableHead>
-                    <TableHead className="w-[120px]">Operador</TableHead>
-                    <TableHead className="w-[140px]">Conferido</TableHead>
-                    <TableHead className="w-[80px] text-center">Ações</TableHead>
+                    <TableHead className="w-[60px] text-center">Qtd</TableHead>
+                    <TableHead className="w-[140px] text-center">Inserido em</TableHead>
+                    <TableHead className="w-[140px] text-center">Conferido</TableHead>
+                    <TableHead className="w-[60px] text-center">Ações</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -500,23 +656,35 @@ export default function ProductionEntry() {
                         {item.productDescription}
                       </TableCell>
                       <TableCell className="text-center font-bold">{item.quantity}</TableCell>
-                      <TableCell className="text-sm">
-                        <div className="flex flex-col">
-                          <span>{format(new Date(item.insertedAt), "dd/MM/yyyy", { locale: ptBR })}</span>
-                          <span className="text-xs text-muted-foreground">
-                            {format(new Date(item.insertedAt), "HH:mm", { locale: ptBR })}
-                          </span>
+                      <TableCell className="text-sm text-center">
+                        <div className="flex flex-col items-center gap-0.5">
+                          <span className="text-xs">{format(new Date(item.insertedAt), "dd/MM/yyyy HH:mm", { locale: ptBR })}</span>
+                          {item.createdByName && (
+                            <span className="text-xs text-muted-foreground">{item.createdByName}</span>
+                          )}
                         </div>
                       </TableCell>
-                      <TableCell className="text-sm">{item.checked && user?.name ? user.name : ""}</TableCell>
-                      <TableCell className="text-sm">
-                        <div className="flex flex-col">
-                          <span className={`font-semibold ${item.checked ? "text-green-600" : "text-yellow-600"}`}>
+                      <TableCell className="text-sm text-center">
+                        <div className="flex flex-col items-center gap-0.5">
+                          <span
+                            className={`font-semibold text-xs ${
+                              item.checked ? "text-green-600" : "text-yellow-600"
+                            }`}
+                          >
                             {item.checked ? "Sim" : "Não"}
                           </span>
-                          {item.checked && user?.name && (
-                            <span className="text-xs text-muted-foreground">{user.name}</span>
-                          )}
+                          <span className="text-xs text-muted-foreground">
+                            {item.checked
+                              ? item.checkedByName
+                                ? `Conferido por ${item.checkedByName}`
+                                : ""
+                              : "Aguardando conferência"}
+                          </span>
+                          <span className="text-xs text-muted-foreground">
+                            {item.checked && item.checkedAt
+                              ? format(new Date(item.checkedAt), "dd/MM/yyyy HH:mm", { locale: ptBR })
+                              : "--"}
+                          </span>
                         </div>
                       </TableCell>
                       <TableCell className="text-center">
@@ -524,7 +692,8 @@ export default function ProductionEntry() {
                           variant="ghost"
                           size="sm"
                           onClick={() => handleDeleteItem(item)}
-                          className="h-8 w-8 p-0 rounded-full bg-red-500 text-white hover:bg-red-600"
+                          disabled={isDayFinalized}
+                          className="h-8 w-8 p-0 rounded-full bg-red-500 text-white hover:bg-red-600 disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                           <Trash2 size={16} />
                         </Button>

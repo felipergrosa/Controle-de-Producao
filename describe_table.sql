@@ -1,0 +1,1 @@
+DESCRIBE production_day_snapshots;

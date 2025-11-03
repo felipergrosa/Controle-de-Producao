@@ -174,14 +174,9 @@ function DashboardLayoutContent({
   };
 
   const DesktopHeader = () => (
-    <header className="hidden md:grid grid-cols-[1fr_auto_1fr] items-center border-b bg-background/95 px-6 py-4">
-      <div className="flex items-center gap-3 min-w-0">
-        <span className="text-lg font-semibold tracking-tight truncate">
-          {activeMenuItem?.label ?? APP_TITLE}
-        </span>
-      </div>
-      <div className="flex justify-center">
-        <img src="/logo-nobre.png" alt={APP_TITLE} className="h-14 object-contain" />
+    <header className="hidden md:flex items-center justify-between border-b bg-background/95 px-6 py-4">
+      <div className="flex items-center gap-3">
+        <img src="/logo-nobre.png" alt={APP_TITLE} className="h-16 object-contain" />
       </div>
       <TooltipProvider>
         <div className="flex items-center justify-end gap-2">

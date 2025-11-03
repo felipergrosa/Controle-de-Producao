@@ -111,6 +111,8 @@ export const productionEntries = mysqlTable(
     checked: boolean("checked").default(false).notNull(),
     sessionDate: date("session_date").notNull(),
     createdBy: int("created_by"),
+    checkedBy: int("checked_by"),
+    checkedAt: timestamp("checked_at"),
   },
   (table) => ([
     uniqueIndex("idx_entries_session_product").on(table.sessionDate, table.productId),
@@ -130,9 +132,14 @@ export const productionDaySnapshots = mysqlTable(
     sessionDate: date("session_date").notNull().unique(),
     totalItems: int("total_items").notNull(),
     totalQuantity: int("total_quantity").notNull(),
-    finalizedAt: timestamp("finalized_at").defaultNow().notNull(),
+    finalizedAt: timestamp("finalized_at"),
+    finalizedBy: varchar("finalized_by", { length: 255 }),
+    reopenedAt: timestamp("reopened_at"),
+    reopenedBy: varchar("reopened_by", { length: 255 }),
+    isOpen: boolean("is_open").default(true).notNull(),
     payloadJson: json("payload_json").notNull(),
     createdBy: int("created_by"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
   }
 );
 

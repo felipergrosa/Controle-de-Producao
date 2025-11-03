@@ -28,16 +28,32 @@ import {
   getProductMovementByDateRange,
   getProductMovementSummary,
   getProductionByType,
+  getCheckRateStats,
+  getPeriodComparison,
+  getProductiveDays,
+  getABCAnalysis,
+  getInactiveProducts,
+  getProductVariability,
+  getSystemAlerts,
+  getWeeklyHeatmap,
+  getCheckRateTrend,
+  canFinalizeDay,
+  finalizeProductionDay,
+  reopenProductionDay,
+  getDayStatus,
 } from "./db";
 import {
+  hashPassword,
   createLocalUser,
-  loginLocal,
   validateSession,
+  loginLocal,
   logout as logoutAuth,
   updateUserPassword,
   toggleUserActive,
   getAllUsers,
   getUserById,
+  updateUser,
+  deleteUser,
   logAudit,
   getAuditLogs,
 } from "./auth";
@@ -177,6 +193,77 @@ export const appRouter = router({
           input.userId.toString(),
           undefined,
           { action: input.isActive ? 'activated' : 'deactivated' },
+          ctx.req.ip,
+          ctx.req.headers['user-agent']
+        );
+        
+        return { success: true };
+      }),
+    
+    update: protectedProcedure
+      .input(z.object({
+        userId: z.number(),
+        name: z.string().optional(),
+        email: z.string().email().optional(),
+        role: z.enum(['user', 'admin']).optional(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        if (ctx.user?.role !== 'admin') {
+          throw new Error('Apenas administradores podem editar usuários');
+        }
+        
+        await updateUser(input.userId, {
+          name: input.name,
+          email: input.email,
+          role: input.role,
+        });
+        
+        await logAudit(
+          ctx.user.id,
+          'update',
+          'user',
+          input.userId.toString(),
+          undefined,
+          { 
+            message: `Usuário atualizado`,
+            name: input.name,
+            email: input.email,
+            role: input.role,
+          },
+          ctx.req.ip,
+          ctx.req.headers['user-agent']
+        );
+        
+        return { success: true };
+      }),
+    
+    delete: protectedProcedure
+      .input(z.object({ userId: z.number() }))
+      .mutation(async ({ input, ctx }) => {
+        if (ctx.user?.role !== 'admin') {
+          throw new Error('Apenas administradores podem deletar usuários');
+        }
+        
+        if (ctx.user.id === input.userId) {
+          throw new Error('Não é possível deletar seu próprio usuário');
+        }
+        
+        // Buscar dados do usuário antes de deletar
+        const user = await getUserById(input.userId);
+        
+        await deleteUser(input.userId);
+        
+        await logAudit(
+          ctx.user.id,
+          'delete',
+          'user',
+          input.userId.toString(),
+          undefined,
+          { 
+            message: `Usuário deletado: ${user?.email}`,
+            name: user?.name,
+            email: user?.email,
+          },
           ctx.req.ip,
           ctx.req.headers['user-agent']
         );
@@ -374,7 +461,11 @@ export const appRouter = router({
             'production_entry',
             newEntry.id,
             input.productCode,
-            { quantity: input.quantity },
+            {
+              message: `Lançamento criado: ${input.productCode} - ${input.productDescription}`,
+              quantity: input.quantity,
+              sessionDate: dateStr,
+            },
             ctx.req.ip,
             ctx.req.headers['user-agent']
           );
@@ -397,7 +488,11 @@ export const appRouter = router({
 
         const updateData: Record<string, any> = {};
         if (input.quantity !== undefined) updateData.quantity = input.quantity;
-        if (input.checked !== undefined) updateData.checked = input.checked;
+        if (input.checked !== undefined) {
+          updateData.checked = input.checked;
+          updateData.checkedBy = input.checked ? ctx.user?.id ?? null : null;
+          updateData.checkedAt = input.checked ? new Date() : null;
+        }
 
         // Buscar entry antes de atualizar para o log
         const entry = await db.select().from(productionEntries).where(eq(productionEntries.id, input.id)).limit(1);
@@ -409,13 +504,25 @@ export const appRouter = router({
         
         // Log de auditoria
         if (ctx.user && entry.length > 0) {
+          const changes = [];
+          if (input.quantity !== undefined) changes.push(`quantidade: ${input.quantity}`);
+          if (input.checked !== undefined) {
+            changes.push(`conferido: ${input.checked ? 'Sim' : 'Não'}`);
+            if (input.checked) {
+              changes.push(`conferido por ${ctx.user.email}`);
+            }
+          }
+          
           await logAudit(
             ctx.user.id,
             'update',
             'production_entry',
             input.id,
             entry[0].productCode,
-            updateData,
+            {
+              message: `Lançamento atualizado: ${entry[0].productCode} (${changes.join(', ')})`,
+              ...updateData,
+            },
             ctx.req.ip,
             ctx.req.headers['user-agent']
           );
@@ -443,7 +550,10 @@ export const appRouter = router({
             'production_entry',
             input.id,
             entry[0].productCode,
-            { quantity: entry[0].quantity },
+            {
+              message: `Lançamento removido: ${entry[0].productCode} - ${entry[0].productDescription} (Qtd: ${entry[0].quantity})`,
+              quantity: entry[0].quantity,
+            },
             ctx.req.ip,
             ctx.req.headers['user-agent']
           );
@@ -486,7 +596,7 @@ export const appRouter = router({
           input.quantity,
           input.type,
           input.notes,
-          ctx.user?.openId
+          ctx.user?.id
         );
       }),
 
@@ -549,6 +659,59 @@ export const appRouter = router({
       .query(async ({ input }) => {
         return await getDailyProductionTrend(input.startDate, input.endDate);
       }),
+
+    getCheckRate: protectedProcedure
+      .input(z.object({ startDate: z.date(), endDate: z.date() }))
+      .query(async ({ input }) => {
+        return await getCheckRateStats(input.startDate, input.endDate);
+      }),
+
+    getPeriodComparison: protectedProcedure
+      .input(z.object({ startDate: z.date(), endDate: z.date() }))
+      .query(async ({ input }) => {
+        return await getPeriodComparison(input.startDate, input.endDate);
+      }),
+
+    getProductiveDays: protectedProcedure
+      .input(z.object({ startDate: z.date(), endDate: z.date() }))
+      .query(async ({ input }) => {
+        return await getProductiveDays(input.startDate, input.endDate);
+      }),
+
+    getABCAnalysis: protectedProcedure
+      .input(z.object({ startDate: z.date(), endDate: z.date() }))
+      .query(async ({ input }) => {
+        return await getABCAnalysis(input.startDate, input.endDate);
+      }),
+
+    getInactiveProducts: protectedProcedure
+      .input(z.object({ days: z.number().default(30) }))
+      .query(async ({ input }) => {
+        return await getInactiveProducts(input.days);
+      }),
+
+    getProductVariability: protectedProcedure
+      .input(z.object({ startDate: z.date(), endDate: z.date() }))
+      .query(async ({ input }) => {
+        return await getProductVariability(input.startDate, input.endDate);
+      }),
+
+    getSystemAlerts: protectedProcedure
+      .query(async () => {
+        return await getSystemAlerts();
+      }),
+
+    getWeeklyHeatmap: protectedProcedure
+      .input(z.object({ startDate: z.date(), endDate: z.date() }))
+      .query(async ({ input }) => {
+        return await getWeeklyHeatmap(input.startDate, input.endDate);
+      }),
+
+    getCheckRateTrend: protectedProcedure
+      .input(z.object({ startDate: z.date(), endDate: z.date() }))
+      .query(async ({ input }) => {
+        return await getCheckRateTrend(input.startDate, input.endDate);
+      }),
   }),
 
   // Production day snapshots router
@@ -559,12 +722,19 @@ export const appRouter = router({
         return await getSnapshotByDate(input.date);
       }),
 
+    getStatus: protectedProcedure
+      .input(z.object({ date: z.date() }))
+      .query(async ({ input }) => {
+        return await getDayStatus(input.date);
+      }),
+
     finalize: protectedProcedure
       .input(
         z.object({
           sessionDate: z.date(),
           entries: z.array(
             z.object({
+              productId: z.string().optional(),
               photoUrl: z.string().optional(),
               code: z.string(),
               description: z.string(),
@@ -576,36 +746,65 @@ export const appRouter = router({
         })
       )
       .mutation(async ({ input, ctx }) => {
-        const db = await getDb();
-        if (!db) throw new Error("Database not available");
+        if (!ctx.user) throw new Error("Unauthenticated");
 
-        const dateStr = new Date(input.sessionDate).toISOString().split("T")[0];
+        const snapshot = await finalizeProductionDay(
+          input.sessionDate,
+          input.entries,
+          ctx.user.id,
+          ctx.user.email
+        );
 
-        // Check if snapshot already exists
-        const existing = await getSnapshotByDate(input.sessionDate);
-        if (existing) {
-          throw new Error("Snapshot for this date already exists");
-        }
-
-        // Create snapshot
-        const id = crypto.randomUUID();
-        const snapshot: InsertProductionDaySnapshot = {
-          id,
-          sessionDate: dateStr as any,
-          totalItems: input.entries.length,
-          totalQuantity: input.entries.reduce((sum, e) => sum + e.quantity, 0),
-          payloadJson: JSON.stringify(input.entries),
-          createdBy: ctx.user?.id,
-        };
-
-        await db.insert(productionDaySnapshots).values(snapshot);
-
-        // Delete production entries for this date
-        await db
-          .delete(productionEntries)
-          .where(eq(productionEntries.sessionDate, dateStr as any));
+        // Audit log com mensagem descritiva
+        await logAudit(
+          ctx.user.id,
+          'finalize',
+          'production_day',
+          undefined,
+          input.sessionDate.toISOString().split('T')[0],
+          {
+            message: `Dia ${input.sessionDate.toISOString().split('T')[0]} finalizado por ${ctx.user.email}`,
+            totalItems: input.entries.length,
+            totalQuantity: input.entries.reduce((sum: number, e: any) => sum + e.quantity, 0),
+            entries: input.entries.length,
+          },
+          ctx.req.ip,
+          ctx.req.headers['user-agent']
+        );
 
         return snapshot;
+      }),
+
+    reopen: protectedProcedure
+      .input(z.object({ sessionDate: z.date() }))
+      .mutation(async ({ input, ctx }) => {
+        if (!ctx.user) throw new Error("Unauthenticated");
+        if (ctx.user.role !== "admin") {
+          throw new Error("Apenas administradores podem reabrir dias finalizados");
+        }
+
+        const result = await reopenProductionDay(
+          input.sessionDate,
+          ctx.user.id,
+          ctx.user.email
+        );
+
+        // Audit log com mensagem descritiva
+        await logAudit(
+          ctx.user.id,
+          'reopen',
+          'production_day',
+          undefined,
+          input.sessionDate.toISOString().split('T')[0],
+          {
+            message: `Dia ${input.sessionDate.toISOString().split('T')[0]} reaberto pelo admin ${ctx.user.email}`,
+            reopenedAt: result.reopenedAt,
+          },
+          ctx.req.ip,
+          ctx.req.headers['user-agent']
+        );
+
+        return result;
       }),
   }),
 });

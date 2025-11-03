@@ -27,6 +27,9 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -61,3 +64,50 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
           platforms: linux/amd64,linux/arm64
+
+  deploy:
+    name: Deploy to VPS
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - name: Copy docker-compose to VPS
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_SSH_PORT || 22 }}
+          source: "docker-compose.prod.yml"
+          target: "/opt/controle-producao/"
+          strip_components: 0
+
+      - name: Prepare .env and deploy
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_SSH_PORT || 22 }}
+          script: |
+            set -e
+            sudo mkdir -p /opt/controle-producao
+            sudo chown -R $USER:$USER /opt/controle-producao
+            cd /opt/controle-producao
+            # Criar .env com segredos
+            cat > .env << 'EOF'
+            DOCKERHUB_USERNAME=${{ secrets.DOCKERHUB_USERNAME }}
+            MYSQL_ROOT_PASSWORD=${{ secrets.MYSQL_ROOT_PASSWORD }}
+            MYSQL_DATABASE=${{ secrets.MYSQL_DATABASE }}
+            JWT_SECRET=${{ secrets.JWT_SECRET }}
+            APP_PORT=${{ secrets.APP_PORT }}
+            DB_PORT=${{ secrets.DB_PORT }}
+            OAUTH_SERVER_URL=${{ secrets.OAUTH_SERVER_URL || '' }}
+            DISABLE_AUTH=${{ secrets.DISABLE_AUTH || 'true' }}
+            TZ=America/Sao_Paulo
+            EOF
+            # Garantir nome do arquivo padrão
+            cp -f docker-compose.prod.yml docker-compose.yml
+            # Pull e subir containers
+            docker compose -f docker-compose.yml --env-file .env pull
+            docker compose -f docker-compose.yml --env-file .env up -d --remove-orphans
