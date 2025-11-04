@@ -10,6 +10,17 @@ interface Migration {
   sql: string;
 }
 
+function resolveDatabaseName(connectionString: string): string | null {
+  try {
+    const url = new URL(connectionString);
+    const pathname = url.pathname.replace(/^\//, "");
+    return pathname.length > 0 ? pathname : null;
+  } catch (error) {
+    console.warn("[Migrations] Não foi possível interpretar DATABASE_URL:", error);
+    return null;
+  }
+}
+
 /**
  * Cria tabela de controle de migrations se não existir
  */
@@ -152,6 +163,14 @@ export async function runMigrations(): Promise<void> {
   try {
     // Criar conexão direta (não usa Drizzle)
     connection = await mysql.createConnection(connectionString);
+
+    const resolvedDbName = resolveDatabaseName(connectionString)
+      ?? process.env.MYSQL_DATABASE
+      ?? "production_control";
+
+    await connection.query(`CREATE DATABASE IF NOT EXISTS \`${resolvedDbName}\``);
+    await connection.changeUser({ database: resolvedDbName });
+    console.log(`[Migrations] Usando database: ${resolvedDbName}`);
 
     // Garantir que tabela de controle existe
     await ensureMigrationsTable(connection);
