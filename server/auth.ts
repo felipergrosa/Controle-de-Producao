@@ -1,11 +1,13 @@
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
-import { eq, and, gt } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { getDb } from "./db";
 import { users, sessions, auditLogs, InsertUser, User, Session, InsertAuditLog } from "../drizzle/schema";
 
 const BCRYPT_ROUNDS = 10;
-const SESSION_DURATION_DAYS = 30;
+const SESSION_DURATION_DAYS = 365;
+const SESSION_MAX_AGE_MS = SESSION_DURATION_DAYS * 24 * 60 * 60 * 1000;
+const SESSION_RENEW_THRESHOLD_MS = 7 * 24 * 60 * 60 * 1000; // 7 dias
 
 /**
  * Cria hash de senha usando bcrypt
@@ -72,6 +74,8 @@ export async function createLocalUser(
 /**
  * Autentica usuário e cria sessão
  */
+export { SESSION_MAX_AGE_MS };
+
 export async function loginLocal(
   email: string,
   password: string,
@@ -109,8 +113,7 @@ export async function loginLocal(
 
   // Criar sessão
   const token = generateSessionToken();
-  const expiresAt = new Date();
-  expiresAt.setDate(expiresAt.getDate() + SESSION_DURATION_DAYS);
+  const expiresAt = new Date(Date.now() + SESSION_MAX_AGE_MS);
 
   const sessionId = crypto.randomUUID();
   await db.insert(sessions).values({
@@ -148,6 +151,22 @@ export async function validateSession(token: string): Promise<User | null> {
   }
 
   const session = sessionResult[0];
+
+  if (session.expiresAt && session.expiresAt.getTime() <= now.getTime()) {
+    await db.delete(sessions).where(eq(sessions.id, session.id));
+    return null;
+  }
+
+  if (
+    session.expiresAt &&
+    session.expiresAt.getTime() - now.getTime() < SESSION_RENEW_THRESHOLD_MS
+  ) {
+    const newExpiry = new Date(Date.now() + SESSION_MAX_AGE_MS);
+    await db
+      .update(sessions)
+      .set({ expiresAt: newExpiry })
+      .where(eq(sessions.id, session.id));
+  }
 
   // Buscar usuário
   const userResult = await db.select().from(users).where(eq(users.id, session.userId)).limit(1);

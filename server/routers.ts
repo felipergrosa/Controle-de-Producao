@@ -56,6 +56,7 @@ import {
   deleteUser,
   logAudit,
   getAuditLogs,
+  SESSION_MAX_AGE_MS,
 } from "./auth";
 import { products, productionEntries, productionDaySnapshots, InsertProductionEntry, InsertProductionDaySnapshot } from "../drizzle/schema";
 
@@ -84,7 +85,7 @@ export const appRouter = router({
           httpOnly: true,
           secure: process.env.NODE_ENV === 'production',
           sameSite: 'lax',
-          maxAge: 30 * 24 * 60 * 60 * 1000, // 30 dias
+          maxAge: SESSION_MAX_AGE_MS,
         });
         
         await logAudit(user.id, 'login', 'user', user.id.toString(), undefined, undefined, ipAddress, userAgent);
@@ -127,7 +128,11 @@ export const appRouter = router({
         await logoutAuth(token);
       }
       
-      ctx.res.clearCookie('session_token');
+      ctx.res.clearCookie('session_token', {
+        httpOnly: true,
+        sameSite: 'lax',
+        secure: process.env.NODE_ENV === 'production',
+      });
       
       return { success: true };
     }),
