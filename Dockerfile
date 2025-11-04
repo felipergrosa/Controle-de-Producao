@@ -7,7 +7,7 @@ RUN corepack enable
 
 FROM base AS deps
 WORKDIR /app
-COPY package.json ./
+COPY package.json pnpm-lock.yaml ./
 COPY patches ./patches
 # Dependências de compilação necessárias para mysql2
 RUN apk add --no-cache python3 make g++
@@ -20,7 +20,7 @@ RUN pnpm build
 
 FROM base AS prod-deps
 WORKDIR /app
-COPY package.json ./
+COPY package.json pnpm-lock.yaml ./
 COPY patches ./patches
 # Dependências de compilação necessárias para mysql2
 RUN apk add --no-cache python3 make g++

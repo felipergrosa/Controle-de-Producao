@@ -270,6 +270,8 @@ export async function logAudit(
   ipAddress?: string,
   userAgent?: string
 ): Promise<void> {
+  const normalizedDetails = normalizeAuditDetails(action, entity, entityCode, details);
+
   const db = await getDb();
   if (!db) return;
 
@@ -279,12 +281,172 @@ export async function logAudit(
     entity,
     entityId: entityId ?? null,
     entityCode: entityCode ?? null,
-    details: details ?? null,
+    details: normalizedDetails ?? null,
     ipAddress: ipAddress ?? null,
     userAgent: userAgent ?? null,
   };
 
   await db.insert(auditLogs).values(logData);
+}
+
+function normalizeAuditDetails(
+  action: string,
+  entity: string,
+  entityCode?: string,
+  details?: Record<string, any>
+): Record<string, any> | null {
+  const baseDetails = details ? { ...details } : {};
+  if (entityCode && baseDetails.entityCode === undefined) {
+    baseDetails.entityCode = entityCode;
+  }
+
+  return buildDefaultDetails(action, entity, entityCode, baseDetails);
+}
+
+function buildDefaultDetails(
+  action: string,
+  entity: string,
+  entityCode: string | undefined,
+  details: Record<string, any>
+): Record<string, any> | null {
+  const base = { ...(details ?? {}) } as Record<string, any>;
+
+  const existingMessage = typeof base.message === "string" ? base.message.trim() : "";
+  const existingAction = base.action ? String(base.action) : null;
+
+  if (!existingMessage) {
+    base.message = defaultAuditMessage(action, entity, entityCode, base);
+  }
+
+  if (!existingAction) {
+    base.action = defaultActionKey(action, entity, base);
+  }
+
+  return Object.keys(base).length > 0 ? base : null;
+}
+
+function defaultAuditMessage(
+  action: string,
+  entity: string,
+  entityCode: string | undefined,
+  details: Record<string, any>
+): string {
+  switch (`${entity}:${action}`) {
+    case "user:login":
+      return "Usuário realizou login";
+    case "user:create":
+      return `Usuário criado${details.email ? ` (${details.email})` : ""}`;
+    case "user:update":
+      if (details.action === "password_reset") {
+        return "Senha do usuário redefinida";
+      }
+      if (details.action === "activated") {
+        return "Usuário ativado";
+      }
+      if (details.action === "deactivated") {
+        return "Usuário desativado";
+      }
+      return `Usuário atualizado${details.email ? ` (${details.email})` : ""}`;
+    case "user:delete":
+      return `Usuário removido${details.email ? ` (${details.email})` : ""}`;
+    case "production_entry:create": {
+      const quantityText = details.quantity !== undefined ? ` (Qtd: ${details.quantity})` : "";
+      return `Lançamento criado: ${formatProductLabel(details, entityCode)}${quantityText}`;
+    }
+    case "production_entry:update": {
+      const changeParts: string[] = [];
+      if (details.quantity !== undefined) {
+        changeParts.push(`quantidade: ${details.quantity}`);
+      }
+      if (typeof details.checked === "boolean") {
+        changeParts.push(`conferido: ${details.checked ? "Sim" : "Não"}`);
+      }
+      const suffix = changeParts.length ? ` (${changeParts.join(", ")})` : "";
+      return `Lançamento atualizado: ${formatProductLabel(details, entityCode)}${suffix}`;
+    }
+    case "production_entry:delete":
+      return `Lançamento removido: ${formatProductLabel(details, entityCode)}${details.quantity !== undefined ? ` (Qtd: ${details.quantity})` : ""}`;
+    case "production_day:finalize":
+      return `Dia ${formatDateLabel(details.sessionDate ?? entityCode)} finalizado`;
+    case "production_day:reopen":
+      return `Dia ${formatDateLabel(details.sessionDate ?? entityCode)} reaberto`;
+    default:
+      return `${entity.replace(/_/g, " ")} ${translateAction(action)}`.trim();
+  }
+}
+
+function defaultActionKey(action: string, entity: string, details: Record<string, any>): string {
+  switch (`${entity}:${action}`) {
+    case "user:login":
+      return "login";
+    case "user:create":
+      return "created";
+    case "user:delete":
+      return "deleted";
+    case "user:update":
+      if (details.action === "password_reset") return "password_reset";
+      if (details.action === "activated" || details.action === "deactivated") return details.action;
+      return "updated";
+    case "production_entry:create":
+      return "entry_created";
+    case "production_entry:update":
+      if (typeof details.checked === "boolean") {
+        return details.checked ? "entry_checked" : "entry_unchecked";
+      }
+      if (details.quantity !== undefined) {
+        return "entry_quantity_updated";
+      }
+      return "entry_updated";
+    case "production_entry:delete":
+      return "entry_deleted";
+    case "production_day:finalize":
+      return "day_finalized";
+    case "production_day:reopen":
+      return "day_reopened";
+    default:
+      return `${entity}_${action}`;
+  }
+}
+
+function translateAction(action: string): string {
+  switch (action) {
+    case "create":
+      return "criado";
+    case "update":
+      return "atualizado";
+    case "delete":
+      return "removido";
+    case "finalize":
+      return "finalizado";
+    case "reopen":
+      return "reaberto";
+    case "login":
+      return "login";
+    default:
+      return action;
+  }
+}
+
+function formatProductLabel(details: Record<string, any>, entityCode: string | undefined): string {
+  const code = details.productCode ?? details.code ?? entityCode ?? "-";
+  const description = details.productDescription ?? details.description ?? details.productName;
+  if (code && description) {
+    return `${code} - ${description}`;
+  }
+  return code || description || "lançamento";
+}
+
+function formatDateLabel(value: any): string {
+  if (!value) {
+    return "(data não informada)";
+  }
+  if (value instanceof Date) {
+    return value.toISOString().split("T")[0];
+  }
+  if (typeof value === "string") {
+    return value.split("T")[0];
+  }
+  return String(value);
 }
 
 /**

@@ -10,6 +10,58 @@ import { trpc } from "@/lib/trpc";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 
+const ACTION_LABELS: Record<string, string> = {
+  create: "Criação",
+  update: "Atualização",
+  delete: "Remoção",
+  login: "Login",
+  finalize: "Finalização",
+  reopen: "Reabertura",
+};
+
+const ENTITY_LABELS: Record<string, string> = {
+  user: "Usuário",
+  production_entry: "Lançamento de Produção",
+  production_day: "Dia de Produção",
+  product: "Produto",
+};
+
+function renderDetailsMessage(details: any): string {
+  if (!details) return "";
+  if (typeof details.message === "string" && details.message.trim()) {
+    return details.message;
+  }
+  const parts: string[] = [];
+  if (details.quantity !== undefined) {
+    parts.push(`Quantidade: ${details.quantity}`);
+  }
+  if (details.sessionDate) {
+    parts.push(`Dia: ${formatDate(details.sessionDate)}`);
+  }
+  if (details.checked !== undefined) {
+    parts.push(`Conferido? ${details.checked ? "Sim" : "Não"}`);
+  }
+  if (parts.length > 0) {
+    return parts.join(" • ");
+  }
+  return typeof details === "object" ? JSON.stringify(details) : String(details);
+}
+
+function renderDetailsTooltip(details: any): string | undefined {
+  if (!details) return undefined;
+  if (typeof details === "object") {
+    return JSON.stringify(details, null, 2);
+  }
+  return String(details);
+}
+
+function formatDate(value: any): string {
+  if (!value) return "";
+  if (value instanceof Date) return value.toISOString().split("T")[0];
+  if (typeof value === "string") return value.split("T")[0];
+  return String(value);
+}
+
 export default function AuditLogs() {
   const [actionFilter, setActionFilter] = useState<string>("Todas");
   const [entityFilter, setEntityFilter] = useState<string>("Todas");
@@ -22,28 +74,34 @@ export default function AuditLogs() {
     limit: 100,
   });
 
-  const filteredLogs = logs.filter((log: any) => {
-    if (!searchQuery) return true;
-    const search = searchQuery.toLowerCase();
-    return (
-      log.userName?.toLowerCase().includes(search) ||
-      log.userEmail?.toLowerCase().includes(search) ||
-      log.entityCode?.toLowerCase().includes(search) ||
-      JSON.stringify(log.details || {}).toLowerCase().includes(search)
-    );
-  });
+  const filteredLogs = logs
+    .filter((log: any) => {
+      if (!searchQuery) return true;
+      const search = searchQuery.toLowerCase();
+      return (
+        log.userName?.toLowerCase().includes(search) ||
+        log.userEmail?.toLowerCase().includes(search) ||
+        log.entityCode?.toLowerCase().includes(search) ||
+        JSON.stringify(log.details || {}).toLowerCase().includes(search)
+      );
+    })
+    .sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
   const handleExportCSV = () => {
     const csvContent = [
-      ["Data/Hora", "Usuário", "Ação", "Entidade", "Código", "Detalhes"],
-      ...filteredLogs.map((log: any) => [
-        format(new Date(log.createdAt), "dd/MM/yyyy, HH:mm:ss", { locale: ptBR }),
-        `${log.userName || 'N/A'} (${log.userEmail || 'N/A'})`,
-        log.action,
-        log.entity,
-        log.entityCode || '-',
-        JSON.stringify(log.details || {})
-      ])
+      ["Data/Hora", "Usuário", "Ação", "Entidade", "Código", "Mensagem", "Detalhes"],
+      ...filteredLogs.map((log: any) => {
+        const message = typeof log.details?.message === "string" ? log.details.message : "";
+        return [
+          format(new Date(log.createdAt), "dd/MM/yyyy, HH:mm:ss", { locale: ptBR }),
+          `${log.userName || "N/A"} (${log.userEmail || "N/A"})`,
+          ACTION_LABELS[log.action] ?? log.action,
+          ENTITY_LABELS[log.entity] ?? log.entity,
+          log.entityCode || "-",
+          message,
+          JSON.stringify(log.details || {}),
+        ];
+      })
     ]
       .map(row => row.map(cell => `"${cell}"`).join(","))
       .join("\n");
@@ -80,9 +138,12 @@ export default function AuditLogs() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="Todas">Todas</SelectItem>
-                    <SelectItem value="Criação">Criação</SelectItem>
-                    <SelectItem value="Atualização">Atualização</SelectItem>
-                    <SelectItem value="Deleção">Deleção</SelectItem>
+                    <SelectItem value="create">Criação</SelectItem>
+                    <SelectItem value="update">Atualização</SelectItem>
+                    <SelectItem value="delete">Remoção</SelectItem>
+                    <SelectItem value="login">Login</SelectItem>
+                    <SelectItem value="finalize">Finalização</SelectItem>
+                    <SelectItem value="reopen">Reabertura</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -94,9 +155,10 @@ export default function AuditLogs() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="Todas">Todas</SelectItem>
-                    <SelectItem value="Produto">Produto</SelectItem>
-                    <SelectItem value="Lançamento">Lançamento</SelectItem>
-                    <SelectItem value="Usuário">Usuário</SelectItem>
+                    <SelectItem value="user">Usuário</SelectItem>
+                    <SelectItem value="production_entry">Lançamento de Produção</SelectItem>
+                    <SelectItem value="production_day">Dia de Produção</SelectItem>
+                    <SelectItem value="product">Produto</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -177,16 +239,13 @@ export default function AuditLogs() {
                             log.action === "delete" ? "text-red-600" :
                             "text-gray-600"
                           }`}>
-                            {log.action === "create" ? "Criação" :
-                             log.action === "update" ? "Atualização" :
-                             log.action === "delete" ? "Deleção" :
-                             log.action}
+                            {ACTION_LABELS[log.action] ?? log.action}
                           </span>
                         </TableCell>
-                        <TableCell className="text-sm capitalize">{log.entity}</TableCell>
+                        <TableCell className="text-sm">{ENTITY_LABELS[log.entity] ?? log.entity}</TableCell>
                         <TableCell className="font-mono text-sm text-blue-600">{log.entityCode || '-'}</TableCell>
-                        <TableCell className="text-sm max-w-[300px] truncate">
-                          {JSON.stringify(log.details || {})}
+                        <TableCell className="text-sm max-w-[320px]" title={renderDetailsTooltip(log.details)}>
+                          <span className="block truncate">{renderDetailsMessage(log.details)}</span>
                         </TableCell>
                       </TableRow>
                     ))

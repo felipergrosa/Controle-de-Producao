@@ -430,7 +430,25 @@ export const appRouter = router({
               .update(productionEntries)
               .set({ quantity: existing.quantity + input.quantity })
               .where(eq(productionEntries.id, existing.id));
-            return existing;
+            const updatedQuantity = existing.quantity + input.quantity;
+            if (ctx.user) {
+              await logAudit(
+                ctx.user.id,
+                "update",
+                "production_entry",
+                existing.id,
+                existing.productCode,
+                {
+                  message: `Quantidade incrementada: ${existing.productCode} - ${existing.productDescription} (Qtd: ${updatedQuantity})`,
+                  quantity: updatedQuantity,
+                  addedQuantity: input.quantity,
+                  sessionDate: existing.sessionDate,
+                },
+                ctx.req.ip,
+                ctx.req.headers["user-agent"],
+              );
+            }
+            return { ...existing, quantity: updatedQuantity };
           }
         }
 
