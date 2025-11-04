@@ -14,6 +14,120 @@ function toDateOnlyString(date: Date): string {
   return copy.toISOString().split("T")[0];
 }
 
+function normalizeDateKey(value: Date | string): string {
+  if (value instanceof Date) {
+    return toDateOnlyString(value);
+  }
+  if (typeof value === "string") {
+    return value.split("T")[0];
+  }
+  return toDateOnlyString(new Date(value));
+}
+
+function dateKeyToUtc(dateKey: string): Date {
+  const [year, month, day] = dateKey.split("-").map(Number);
+  return new Date(Date.UTC(year, (month ?? 1) - 1, day ?? 1));
+}
+
+function utcDateToKey(date: Date): string {
+  return date.toISOString().split("T")[0];
+}
+
+function addUtcDays(date: Date, days: number): Date {
+  const clone = new Date(date.getTime());
+  clone.setUTCDate(clone.getUTCDate() + days);
+  return clone;
+}
+
+function calculateEasterSundayUtc(year: number): Date {
+  const a = year % 19;
+  const b = Math.floor(year / 100);
+  const c = year % 100;
+  const d = Math.floor(b / 4);
+  const e = b % 4;
+  const f = Math.floor((b + 8) / 25);
+  const g = Math.floor((b - f + 1) / 3);
+  const h = (19 * a + b - d - g + 15) % 30;
+  const i = Math.floor(c / 4);
+  const k = c % 4;
+  const l = (32 + 2 * e + 2 * i - h - k) % 7;
+  const m = Math.floor((a + 11 * h + 22 * l) / 451);
+  const month = Math.floor((h + l - 7 * m + 114) / 31);
+  const day = ((h + l - 7 * m + 114) % 31) + 1;
+  return new Date(Date.UTC(year, month - 1, day));
+}
+
+function getBrazilHolidayKeys(year: number): string[] {
+  const easter = calculateEasterSundayUtc(year);
+
+  const holidayDates = [
+    new Date(Date.UTC(year, 0, 1)), // Confraternização Universal
+    addUtcDays(easter, -48), // Carnaval (segunda-feira)
+    addUtcDays(easter, -47), // Carnaval (terça-feira)
+    addUtcDays(easter, -2), // Sexta-feira Santa
+    new Date(Date.UTC(year, 3, 21)), // Tiradentes
+    new Date(Date.UTC(year, 4, 1)), // Dia do Trabalho
+    addUtcDays(easter, 60), // Corpus Christi
+    new Date(Date.UTC(year, 8, 7)), // Independência do Brasil
+    new Date(Date.UTC(year, 9, 12)), // Nossa Senhora Aparecida
+    new Date(Date.UTC(year, 10, 2)), // Finados
+    new Date(Date.UTC(year, 10, 15)), // Proclamação da República
+    new Date(Date.UTC(year, 10, 20)), // Dia da Consciência Negra
+    new Date(Date.UTC(year, 11, 25)), // Natal
+  ];
+
+  return holidayDates.map(utcDateToKey);
+}
+
+function buildBrazilHolidaySet(startUtc: Date, endUtc: Date): Set<string> {
+  const holidaySet = new Set<string>();
+
+  for (let year = startUtc.getUTCFullYear(); year <= endUtc.getUTCFullYear(); year++) {
+    for (const key of getBrazilHolidayKeys(year)) {
+      const holidayUtc = dateKeyToUtc(key);
+      if (holidayUtc >= startUtc && holidayUtc <= endUtc) {
+        holidaySet.add(key);
+      }
+    }
+  }
+
+  return holidaySet;
+}
+
+function isBusinessDayUtc(dateUtc: Date, holidays: Set<string>): boolean {
+  const weekday = dateUtc.getUTCDay();
+  if (weekday === 0 || weekday === 6) {
+    return false;
+  }
+  return !holidays.has(utcDateToKey(dateUtc));
+}
+
+function countBusinessDays(startUtc: Date, endUtc: Date, holidays: Set<string>): number {
+  if (endUtc < startUtc) {
+    return 0;
+  }
+
+  let count = 0;
+  for (
+    let cursor = new Date(startUtc.getTime());
+    cursor <= endUtc;
+    cursor.setUTCDate(cursor.getUTCDate() + 1)
+  ) {
+    if (isBusinessDayUtc(cursor, holidays)) {
+      count++;
+    }
+  }
+
+  return count;
+}
+
+type InactiveProductInfo = {
+  code: string;
+  description: string;
+  lastProducedAt: Date | null;
+  daysInactive: number | null;
+};
+
 function formatDateLongPtBR(value: Date | string): string {
   const baseDate = typeof value === "string" ? new Date(`${value}T00:00:00`) : new Date(value);
   if (Number.isNaN(baseDate.getTime())) {
@@ -644,21 +758,38 @@ export async function getProductiveDays(startDate: Date, endDate: Date): Promise
   const db = await getDb();
   if (!db) return { productiveDays: 0, totalDays: 0, rate: 0 };
   
-  const { sql } = await import("drizzle-orm");
-  const start = toDateOnlyString(startDate);
-  const end = toDateOnlyString(endDate);
-  
-  const result = await db
-    .select({
-      productiveDays: sql<number>`COUNT(DISTINCT ${productionEntries.sessionDate})`,
-    })
+  const startKey = toDateOnlyString(startDate);
+  const endKey = toDateOnlyString(endDate);
+  const startUtc = dateKeyToUtc(startKey);
+  const endUtc = dateKeyToUtc(endKey);
+
+  if (endUtc < startUtc) {
+    return { productiveDays: 0, totalDays: 0, rate: 0 };
+  }
+
+  const holidays = buildBrazilHolidaySet(startUtc, endUtc);
+
+  const rows = await db
+    .select({ sessionDate: productionEntries.sessionDate })
     .from(productionEntries)
     .where(
-      sql`${productionEntries.sessionDate} >= ${start} AND ${productionEntries.sessionDate} <= ${end}`
+      sql`${productionEntries.sessionDate} >= ${startKey} AND ${productionEntries.sessionDate} <= ${endKey}`
     );
-  
-  const totalDays = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) + 1;
-  const productiveDays = Number(result[0]?.productiveDays ?? 0);
+
+  const productiveBusinessDays = new Set<string>();
+
+  for (const row of rows) {
+    const rawDate = row.sessionDate as unknown;
+    if (!rawDate) continue;
+    const dateKey = normalizeDateKey(rawDate as Date | string);
+    const dateUtc = dateKeyToUtc(dateKey);
+    if (isBusinessDayUtc(dateUtc, holidays)) {
+      productiveBusinessDays.add(dateKey);
+    }
+  }
+
+  const totalDays = countBusinessDays(startUtc, endUtc, holidays);
+  const productiveDays = productiveBusinessDays.size;
   const rate = totalDays > 0 ? (productiveDays / totalDays) * 100 : 0;
   
   return { productiveDays, totalDays, rate };
@@ -710,9 +841,13 @@ export async function getABCAnalysis(startDate: Date, endDate: Date): Promise<an
 }
 
 // Produtos sem movimento
-export async function getInactiveProducts(days: number = 30): Promise<any[]> {
+export async function getInactiveProducts(
+  days: number = 30
+): Promise<{ totalProducts: number; inactiveCount: number; products: InactiveProductInfo[] }> {
   const db = await getDb();
-  if (!db) return [];
+  if (!db) {
+    return { totalProducts: 0, inactiveCount: 0, products: [] };
+  }
   
   const { sql } = await import("drizzle-orm");
   const cutoffDate = new Date();
@@ -731,17 +866,22 @@ export async function getInactiveProducts(days: number = 30): Promise<any[]> {
     .groupBy(productionEntries.productCode);
   
   const recentCodes = new Set(recentProduction.map(p => p.productCode));
-  
-  return allProducts
+  const inactiveProducts = allProducts
     .filter(p => !recentCodes.has(p.code))
-    .map(p => ({
+    .map<InactiveProductInfo>(p => ({
       code: p.code,
       description: p.description,
-      lastProducedAt: p.lastProducedAt,
-      daysInactive: p.lastProducedAt 
-        ? Math.floor((new Date().getTime() - new Date(p.lastProducedAt).getTime()) / (1000 * 60 * 60 * 24))
+      lastProducedAt: p.lastProducedAt ?? null,
+      daysInactive: p.lastProducedAt
+        ? Math.floor((Date.now() - new Date(p.lastProducedAt).getTime()) / (1000 * 60 * 60 * 24))
         : null,
     }));
+
+  return {
+    totalProducts: allProducts.length,
+    inactiveCount: inactiveProducts.length,
+    products: inactiveProducts,
+  };
 }
 
 // Variabilidade de produção por produto

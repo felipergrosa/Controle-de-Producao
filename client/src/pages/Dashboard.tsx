@@ -84,9 +84,13 @@ export default function Dashboard() {
     { enabled: !!dateRange }
   );
 
-  const { data: inactiveProducts = [] } = trpc.analytics.getInactiveProducts.useQuery(
+  const { data: inactiveProductsData } = trpc.analytics.getInactiveProducts.useQuery(
     { days: 30 }
   );
+
+  const inactiveProducts = inactiveProductsData?.products ?? [];
+  const totalProductsCount = inactiveProductsData?.totalProducts ?? 0;
+  const inactiveProductsCount = inactiveProductsData?.inactiveCount ?? inactiveProducts.length;
 
   const { data: alerts = [] } = trpc.analytics.getSystemAlerts.useQuery();
 
@@ -156,22 +160,65 @@ export default function Dashboard() {
   const criticalAlerts = alerts.filter(a => a.type === 'critical');
   const warningAlerts = alerts.filter(a => a.type === 'warning');
 
+  const metricCards = [
+    {
+      key: "totalProduced",
+      title: "Total Produzido",
+      value: stats?.totalQuantity ?? 0,
+      formatter: (val: number) => val.toLocaleString("pt-BR"),
+      subtitle: "unidades",
+      change: periodComparison?.changes.totalQuantity,
+      icon: BarChart3,
+      iconClasses: "bg-primary/10 text-primary",
+    },
+    {
+      key: "totalItems",
+      title: "Total de Itens",
+      value: stats?.totalItems ?? 0,
+      formatter: (val: number) => val.toLocaleString("pt-BR"),
+      subtitle: "lançamentos",
+      change: periodComparison?.changes.totalItems,
+      icon: Calendar,
+      iconClasses: "bg-emerald-100 text-emerald-600",
+    },
+    {
+      key: "uniqueProducts",
+      title: "Produtos Únicos",
+      value: stats?.uniqueProducts ?? 0,
+      formatter: (val: number) => val.toLocaleString("pt-BR"),
+      subtitle: "produtos",
+      change: periodComparison?.changes.uniqueProducts,
+      icon: Package,
+      iconClasses: "bg-sky-100 text-sky-600",
+    },
+    {
+      key: "averagePerDay",
+      title: "Média por Dia",
+      value: stats?.averagePerDay ?? 0,
+      formatter: (val: number) =>
+        val.toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 }),
+      subtitle: "unidades/dia",
+      change: periodComparison?.changes.averagePerDay,
+      icon: Clock,
+      iconClasses: "bg-amber-100 text-amber-600",
+    },
+  ] as const;
+
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold">Dashboard de KPI</h1>
-        <p className="text-muted-foreground mt-2">Análise completa de produção e métricas</p>
-      </div>
+      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+        <div>
+          <h1 className="text-3xl font-bold">Dashboard de KPI</h1>
+          <p className="text-muted-foreground mt-2">Análise completa de produção e métricas</p>
+        </div>
 
-      {/* Period Selection */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Período</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="flex gap-4 flex-wrap">
+        <div className="flex w-full flex-col items-start gap-2 md:w-auto md:items-end">
+          <div className="flex flex-wrap items-center gap-3 md:justify-end">
+            <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Período
+            </span>
             <Select value={period} onValueChange={(v) => setPeriod(v as PeriodType)}>
-              <SelectTrigger className="w-48">
+              <SelectTrigger className="w-44 md:w-48">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -182,104 +229,78 @@ export default function Dashboard() {
               </SelectContent>
             </Select>
 
-            {period === "custom" && (
-              <>
-                <input
-                  type="date"
-                  value={customStartDate}
-                  onChange={(e) => setCustomStartDate(e.target.value)}
-                  className="px-3 py-2 border rounded-md"
-                />
-                <input
-                  type="date"
-                  value={customEndDate}
-                  onChange={(e) => setCustomEndDate(e.target.value)}
-                  className="px-3 py-2 border rounded-md"
-                />
-              </>
-            )}
-
             <Button onClick={handleExportCSV} variant="outline" className="gap-2">
               <Download size={18} />
               Exportar
             </Button>
           </div>
-        </CardContent>
-      </Card>
+
+          {period === "custom" && (
+            <div className="flex w-full flex-wrap gap-3 md:justify-end">
+              <input
+                type="date"
+                value={customStartDate}
+                onChange={(e) => setCustomStartDate(e.target.value)}
+                className="px-3 py-2 border rounded-md"
+              />
+              <input
+                type="date"
+                value={customEndDate}
+                onChange={(e) => setCustomEndDate(e.target.value)}
+                className="px-3 py-2 border rounded-md"
+              />
+            </div>
+          )}
+        </div>
+      </div>
 
       {/* KPIs Principais com Comparação */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium flex items-center justify-between">
-              <span>Total Produzido</span>
-              {periodComparison && (
-                <div className={`flex items-center gap-1 text-xs ${getChangeColor(periodComparison.changes.totalQuantity)}`}>
-                  {getChangeIcon(periodComparison.changes.totalQuantity)}
-                  <span>{formatChange(periodComparison.changes.totalQuantity)}</span>
-                </div>
-              )}
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-3xl font-bold">{stats?.totalQuantity || 0}</p>
-            <p className="text-xs text-muted-foreground mt-1">unidades</p>
-          </CardContent>
-        </Card>
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+        {metricCards.map((card, index) => {
+          const Icon = card.icon;
+          const hasChange = typeof card.change === "number" && !Number.isNaN(card.change);
+          const gradientClass = [
+            "card-gradient-blue",
+            "card-gradient-purple",
+            "card-gradient-amber",
+            "card-gradient-rose",
+          ][index % 4];
 
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium flex items-center justify-between">
-              <span>Total de Itens</span>
-              {periodComparison && (
-                <div className={`flex items-center gap-1 text-xs ${getChangeColor(periodComparison.changes.totalItems)}`}>
-                  {getChangeIcon(periodComparison.changes.totalItems)}
-                  <span>{formatChange(periodComparison.changes.totalItems)}</span>
+          return (
+            <Card
+              key={card.key}
+              className={`border-border/60 shadow-sm transition hover:shadow-md ${gradientClass}`}
+            >
+              <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-4">
+                <div>
+                  <CardTitle className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    {card.title}
+                  </CardTitle>
                 </div>
-              )}
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-3xl font-bold">{stats?.totalItems || 0}</p>
-            <p className="text-xs text-muted-foreground mt-1">lançamentos</p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium flex items-center justify-between">
-              <span>Produtos Únicos</span>
-              {periodComparison && (
-                <div className={`flex items-center gap-1 text-xs ${getChangeColor(periodComparison.changes.uniqueProducts)}`}>
-                  {getChangeIcon(periodComparison.changes.uniqueProducts)}
-                  <span>{formatChange(periodComparison.changes.uniqueProducts)}</span>
+                <div className={`flex h-12 w-12 items-center justify-center rounded-full ${card.iconClasses}`}>
+                  <Icon className="h-5 w-5" />
                 </div>
-              )}
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-3xl font-bold">{stats?.uniqueProducts || 0}</p>
-            <p className="text-xs text-muted-foreground mt-1">produtos</p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium flex items-center justify-between">
-              <span>Média por Dia</span>
-              {periodComparison && (
-                <div className={`flex items-center gap-1 text-xs ${getChangeColor(periodComparison.changes.averagePerDay)}`}>
-                  {getChangeIcon(periodComparison.changes.averagePerDay)}
-                  <span>{formatChange(periodComparison.changes.averagePerDay)}</span>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="flex items-baseline gap-2">
+                  <span className="text-3xl font-semibold text-foreground">
+                    {card.formatter(card.value)}
+                  </span>
+                  <span className="text-sm text-muted-foreground">{card.subtitle}</span>
                 </div>
-              )}
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-3xl font-bold">{(stats?.averagePerDay || 0).toFixed(0)}</p>
-            <p className="text-xs text-muted-foreground mt-1">unidades/dia</p>
-          </CardContent>
-        </Card>
+                {hasChange && (
+                  <div className={`flex items-center gap-2 text-xs font-medium ${getChangeColor(card.change ?? 0)}`}>
+                    <span className="flex items-center gap-1">
+                      {getChangeIcon(card.change ?? 0)}
+                      {formatChange(card.change ?? 0)}
+                    </span>
+                    <span className="text-muted-foreground">vs período anterior</span>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          );
+        })}
       </div>
 
       {/* KPIs Secundários */}
@@ -326,18 +347,39 @@ export default function Dashboard() {
           <CardHeader className="pb-3">
             <CardTitle className="text-sm font-medium flex items-center gap-2">
               <Package className="h-4 w-4" />
-              Produtos sem movimentacao
+              Info. Produtos
             </CardTitle>
+            <CardDescription>
+              Visão geral dos produtos cadastrados e daqueles com baixa movimentação (últimos 30 dias)
+            </CardDescription>
           </CardHeader>
-          <CardContent>
-            <div className="space-y-2">
-              <p className="text-3xl font-bold">{inactiveProducts.length}</p>
-              <p className="text-xs text-muted-foreground">com baixa ou nenhuma atividade</p>
-              {inactiveProducts.length > 0 && (
-                <Badge variant="outline" className="text-xs">
-                  Atenção necessária
-                </Badge>
-              )}
+          <CardContent className="space-y-4">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="rounded-lg border bg-muted/40 p-4">
+                <p className="text-3xl font-bold">
+                  {totalProductsCount.toLocaleString("pt-BR")}
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Total de produtos cadastrados
+                </p>
+              </div>
+              <div className="rounded-lg border bg-muted/40 p-4">
+                <p className="text-3xl font-bold">
+                  {inactiveProductsCount.toLocaleString("pt-BR")}
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Com baixa ou nenhuma atividade
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <Badge variant="secondary" className="uppercase tracking-wide">
+                Atenção necessária
+              </Badge>
+              <span className="text-xs text-muted-foreground">
+                Acompanhe os produtos com pouca movimentação na aba Detalhes.
+              </span>
             </div>
           </CardContent>
         </Card>
@@ -542,11 +584,39 @@ export default function Dashboard() {
             {/* Produtos Inativos */}
             <Card>
               <CardHeader>
-                <CardTitle>Produtos sem movimentacao</CardTitle>
-                <CardDescription>Produtos com baixa ou nenhuma atividade recente</CardDescription>
+                <CardTitle>Info. Produtos</CardTitle>
+                <CardDescription>
+                  Visão geral dos produtos cadastrados e daqueles com baixa movimentação (últimos 30 dias)
+                </CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="max-h-96 overflow-y-auto space-y-2">
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="rounded-lg border bg-muted/40 p-4">
+                    <p className="text-3xl font-bold">
+                      {totalProductsCount.toLocaleString("pt-BR")}
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Total de produtos cadastrados
+                    </p>
+                  </div>
+                  <div className="rounded-lg border bg-muted/40 p-4">
+                    <p className="text-3xl font-bold">
+                      {inactiveProductsCount.toLocaleString("pt-BR")}
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Com baixa ou nenhuma atividade
+                    </p>
+                  </div>
+                </div>
+
+                <div className="mt-4 flex items-center gap-2">
+                  <Badge variant="secondary">Atenção necessária</Badge>
+                  <span className="text-xs text-muted-foreground">
+                    Lista abaixo exibe até 20 produtos mais recentes sem movimentação
+                  </span>
+                </div>
+
+                <div className="mt-4 max-h-96 overflow-y-auto space-y-2">
                   {inactiveProducts.length === 0 ? (
                     <p className="text-sm text-muted-foreground text-center py-8">
                       Todos os produtos estão ativos
@@ -560,7 +630,7 @@ export default function Dashboard() {
                         </div>
                         <div className="text-right ml-4">
                           <Badge variant="outline" className="text-xs">
-                            {product.daysInactive ? `${product.daysInactive}d` : 'Nunca produzido'}
+                            {product.daysInactive != null ? `${product.daysInactive}d` : 'Nunca produzido'}
                           </Badge>
                         </div>
                       </div>

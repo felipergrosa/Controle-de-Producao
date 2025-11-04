@@ -63,6 +63,15 @@ import { products, productionEntries, productionDaySnapshots, InsertProductionEn
 
 import { eq } from "drizzle-orm";
 
+const entrySourceSchema = z.enum([
+  "code_input",
+  "partial_search",
+  "barcode",
+  "increment_button",
+  "decrement_button",
+  "manual_edit",
+]);
+
 export const appRouter = router({
   system: systemRouter,
   auth: router({
@@ -418,6 +427,7 @@ export const appRouter = router({
           quantity: z.number().int().positive(),
           sessionDate: z.date(),
           grouping: z.boolean().default(true),
+          source: entrySourceSchema.optional(),
         })
       )
       .mutation(async ({ input, ctx }) => {
@@ -448,6 +458,7 @@ export const appRouter = router({
                   quantity: updatedQuantity,
                   addedQuantity: input.quantity,
                   sessionDate: existing.sessionDate,
+                  source: input.source ?? "code_input",
                 },
                 ctx.req.ip,
                 ctx.req.headers["user-agent"],
@@ -488,6 +499,7 @@ export const appRouter = router({
               message: `Lançamento criado: ${input.productCode} - ${input.productDescription}`,
               quantity: input.quantity,
               sessionDate: dateStr,
+              source: input.source ?? "code_input",
             },
             ctx.req.ip,
             ctx.req.headers['user-agent']
@@ -503,6 +515,7 @@ export const appRouter = router({
           id: z.string(),
           quantity: z.number().int().positive().optional(),
           checked: z.boolean().optional(),
+          source: entrySourceSchema.optional(),
         })
       )
       .mutation(async ({ input, ctx }) => {
@@ -545,6 +558,7 @@ export const appRouter = router({
             {
               message: `Lançamento atualizado: ${entry[0].productCode} (${changes.join(', ')})`,
               ...updateData,
+              source: input.source ?? (input.checked !== undefined ? 'manual_edit' : 'code_input'),
             },
             ctx.req.ip,
             ctx.req.headers['user-agent']

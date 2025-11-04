@@ -28,7 +28,7 @@ SELECT
   NOW(),
   NOW()
 WHERE NOT EXISTS (
-  SELECT 1 FROM users WHERE email = @adminEmail
+  SELECT 1 FROM users WHERE email = @adminEmail COLLATE utf8mb4_unicode_ci
 );
 
 -- Rollback manual: DELETE FROM users WHERE email = @adminEmail;

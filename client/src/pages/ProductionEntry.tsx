@@ -6,7 +6,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Trash2, AlertCircle, CheckCircle, Circle, ScanLine, Calendar, X, Search } from "lucide-react";
+import { Trash2, AlertCircle, CheckCircle, Circle, ScanLine, Calendar, X, Search, Minus, Plus, Edit3 } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { format } from "date-fns";
@@ -42,6 +42,8 @@ export default function ProductionEntry() {
   const [selectedProduct, setSelectedProduct] = useState<any>(null);
   const [quantity, setQuantity] = useState("1");
   const [showQuantityModal, setShowQuantityModal] = useState(false);
+  const [inlineEditId, setInlineEditId] = useState<string | null>(null);
+  const [inlineQuantity, setInlineQuantity] = useState<string>("");
   const [showNotFoundModal, setShowNotFoundModal] = useState(false);
   const [notFoundCode, setNotFoundCode] = useState("");
   const [barcodeMode, setBarcodeMode] = useState(false);
@@ -167,7 +169,7 @@ export default function ProductionEntry() {
     }
   };
 
-  const handleAddProduct = async () => {
+  const handleAddProduct = async (source: "code_input" | "partial_search" | "barcode" | "increment_button" | "decrement_button" | "manual_edit" = "code_input") => {
     if (!selectedProduct) return;
 
     const qty = parseInt(quantity) || 0;
@@ -190,6 +192,7 @@ export default function ProductionEntry() {
         quantity: qty,
         sessionDate: targetDate,
         grouping: true,
+        source,
       });
 
       toast.success("Produto adicionado");
@@ -206,9 +209,83 @@ export default function ProductionEntry() {
   const handleQuantityKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter") {
       e.preventDefault();
-      handleAddProduct();
+      handleAddProduct("manual_edit");
     }
   };
+
+  const handleAdjustQuantity = async (item: ProductionItem, delta: number) => {
+    if (isDayFinalized) {
+      toast.error("Não é possível alterar itens em dia finalizado");
+      return;
+    }
+    const nextQuantity = item.quantity + delta;
+    if (nextQuantity < 1) {
+      toast.error("Quantidade mínima é 1");
+      return;
+    }
+    try {
+      await updateEntryMutation.mutateAsync({
+        id: item.id,
+        quantity: nextQuantity,
+        source: delta > 0 ? "increment_button" : "decrement_button",
+      });
+    } catch (error) {
+      toast.error("Erro ao ajustar quantidade");
+    }
+  };
+
+  const startInlineEdit = (item: ProductionItem) => {
+    if (isDayFinalized) {
+      toast.error("Não é possível alterar itens em dia finalizado");
+      return;
+    }
+    setInlineEditId(item.id);
+    setInlineQuantity(item.quantity.toString());
+  };
+
+  const commitInlineEdit = async () => {
+    if (!inlineEditId) return;
+    const item = items.find((entry) => entry.id === inlineEditId);
+    if (!item) {
+      setInlineEditId(null);
+      return;
+    }
+    const parsed = parseInt(inlineQuantity, 10);
+    if (!Number.isFinite(parsed) || parsed < 1) {
+      toast.error("Informe uma quantidade válida (mínimo 1)");
+      return;
+    }
+    if (parsed === item.quantity) {
+      setInlineEditId(null);
+      return;
+    }
+    try {
+      await updateEntryMutation.mutateAsync({
+        id: item.id,
+        quantity: parsed,
+        source: "manual_edit",
+      });
+      setInlineEditId(null);
+    } catch (error) {
+      toast.error("Erro ao atualizar quantidade");
+    }
+  };
+
+  const cancelInlineEdit = () => {
+    setInlineEditId(null);
+    setInlineQuantity("");
+  };
+
+  useEffect(() => {
+    if (!inlineEditId) return;
+    const handler = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        cancelInlineEdit();
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [inlineEditId]);
 
   const handleBarcodeScan = async (rawCode: string) => {
     const code = rawCode.trim();
@@ -230,6 +307,7 @@ export default function ProductionEntry() {
         quantity: 1,
         sessionDate: today,
         grouping: true,
+        source: "barcode",
       });
       toast.success(`Produto ${product.code} lançado`);
     } catch (error: any) {
@@ -655,7 +733,55 @@ export default function ProductionEntry() {
                       <TableCell className={`max-w-[300px] truncate ${item.checked ? "line-through" : ""}`}>
                         {item.productDescription}
                       </TableCell>
-                      <TableCell className="text-center font-bold">{item.quantity}</TableCell>
+                      <TableCell className="text-center font-bold">
+                        <div className="flex items-center justify-center gap-2">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="icon"
+                            className="h-7 w-7 border-border/70"
+                            onClick={() => handleAdjustQuantity(item, -1)}
+                            disabled={isDayFinalized || updateEntryMutation.isPending}
+                          >
+                            <Minus className="h-3 w-3" />
+                          </Button>
+                          {inlineEditId === item.id ? (
+                            <input
+                              className="w-16 rounded-md border border-border bg-white px-2 py-1 text-center text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-primary"
+                              value={inlineQuantity}
+                              onChange={(e) => setInlineQuantity(e.target.value.replace(/\D+/g, ""))}
+                              onBlur={commitInlineEdit}
+                              onKeyDown={(event) => {
+                                if (event.key === "Enter") {
+                                  event.preventDefault();
+                                  commitInlineEdit();
+                                }
+                              }}
+                              autoFocus
+                            />
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => startInlineEdit(item)}
+                              className="group inline-flex min-w-[3rem] items-center justify-center rounded-md bg-white px-2 py-1 text-sm font-semibold text-foreground shadow-sm transition hover:bg-primary/10"
+                              disabled={isDayFinalized}
+                            >
+                              <span>{item.quantity}</span>
+                              <Edit3 className="ml-1 h-3 w-3 opacity-0 transition group-hover:opacity-70" />
+                            </button>
+                          )}
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="icon"
+                            className="h-7 w-7 border-border/70"
+                            onClick={() => handleAdjustQuantity(item, 1)}
+                            disabled={isDayFinalized || updateEntryMutation.isPending}
+                          >
+                            <Plus className="h-3 w-3" />
+                          </Button>
+                        </div>
+                      </TableCell>
                       <TableCell className="text-sm text-center">
                         <div className="flex flex-col items-center gap-0.5">
                           <span className="text-xs">{format(new Date(item.insertedAt), "dd/MM/yyyy HH:mm", { locale: ptBR })}</span>
