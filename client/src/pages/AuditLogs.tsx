@@ -7,8 +7,6 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Download, Search } from "lucide-react";
 import { trpc } from "@/lib/trpc";
-import { format } from "date-fns";
-import { ptBR } from "date-fns/locale";
 
 const ACTION_LABELS: Record<string, string> = {
   create: "Criação",
@@ -25,6 +23,8 @@ const ENTITY_LABELS: Record<string, string> = {
   production_day: "Dia de Produção",
   product: "Produto",
 };
+
+const BRAZIL_TIMEZONE = "America/Sao_Paulo";
 
 function renderDetailsMessage(details: any): string {
   if (!details) return "";
@@ -57,9 +57,29 @@ function renderDetailsTooltip(details: any): string | undefined {
 
 function formatDate(value: any): string {
   if (!value) return "";
-  if (value instanceof Date) return value.toISOString().split("T")[0];
-  if (typeof value === "string") return value.split("T")[0];
-  return String(value);
+  const baseDate = value instanceof Date ? value : new Date(typeof value === "string" ? `${value}T00:00:00` : value);
+  if (Number.isNaN(baseDate.getTime())) {
+    return String(value);
+  }
+  return baseDate.toLocaleDateString("pt-BR", { timeZone: BRAZIL_TIMEZONE });
+}
+
+function formatDateTimeBrazil(value: any): string {
+  if (!value) return "";
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return String(value ?? "");
+  }
+  return date.toLocaleString("pt-BR", {
+    timeZone: BRAZIL_TIMEZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  });
 }
 
 export default function AuditLogs() {
@@ -92,8 +112,9 @@ export default function AuditLogs() {
       ["Data/Hora", "Usuário", "Ação", "Entidade", "Código", "Mensagem", "Detalhes"],
       ...filteredLogs.map((log: any) => {
         const message = typeof log.details?.message === "string" ? log.details.message : "";
+        const formattedDate = formatDateTimeBrazil(log.createdAt);
         return [
-          format(new Date(log.createdAt), "dd/MM/yyyy, HH:mm:ss", { locale: ptBR }),
+          formattedDate,
           `${log.userName || "N/A"} (${log.userEmail || "N/A"})`,
           ACTION_LABELS[log.action] ?? log.action,
           ENTITY_LABELS[log.entity] ?? log.entity,
@@ -110,7 +131,8 @@ export default function AuditLogs() {
     const link = document.createElement("a");
     const url = URL.createObjectURL(blob);
     link.setAttribute("href", url);
-    link.setAttribute("download", `audit-logs-${format(new Date(), "yyyy-MM-dd")}.csv`);
+    const todayLabel = new Date().toLocaleDateString("pt-BR", { timeZone: BRAZIL_TIMEZONE }).replaceAll("/", "-");
+    link.setAttribute("download", `audit-logs-${todayLabel}.csv`);
     link.style.visibility = "hidden";
     document.body.appendChild(link);
     link.click();
@@ -224,7 +246,7 @@ export default function AuditLogs() {
                     filteredLogs.map((log: any, index: number) => (
                       <TableRow key={log.id} className={index % 2 === 0 ? "bg-amber-50/50" : "bg-white"}>
                         <TableCell className="text-sm">
-                          {format(new Date(log.createdAt), "dd/MM/yyyy, HH:mm:ss", { locale: ptBR })}
+                          {formatDateTimeBrazil(log.createdAt)}
                         </TableCell>
                         <TableCell>
                           <div>

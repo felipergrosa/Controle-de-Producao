@@ -1,4 +1,4 @@
-import { sql, eq, and, like, desc } from "drizzle-orm";
+import { sql, eq, and, like, desc, or } from "drizzle-orm";
 import { alias } from "drizzle-orm/mysql-core";
 import { drizzle } from "drizzle-orm/mysql2";
 import mysql from "mysql2/promise";
@@ -12,6 +12,23 @@ function toDateOnlyString(date: Date): string {
   const copy = new Date(date);
   copy.setHours(0, 0, 0, 0);
   return copy.toISOString().split("T")[0];
+}
+
+function formatDateLongPtBR(value: Date | string): string {
+  const baseDate = typeof value === "string" ? new Date(`${value}T00:00:00`) : new Date(value);
+  if (Number.isNaN(baseDate.getTime())) {
+    return String(value);
+  }
+
+  const formatted = baseDate.toLocaleDateString("pt-BR", {
+    weekday: "long",
+    day: "2-digit",
+    month: "long",
+    year: "numeric",
+  });
+
+  if (!formatted) return String(value);
+  return formatted.charAt(0).toUpperCase() + formatted.slice(1);
 }
 
 // Lazily create the drizzle instance so local tooling can run without a DB.
@@ -124,12 +141,19 @@ export async function searchProducts(query: string): Promise<Product[]> {
   const db = await getDb();
   if (!db) return [];
   if (query.length < 2) return [];
-  
-  const upperQuery = query.toUpperCase();
+
+  const trimmedQuery = query.trim();
+  const upperQuery = trimmedQuery.toUpperCase();
   const result = await db
     .select()
     .from(products)
-    .where(like(products.code, `%${upperQuery}%`))
+    .where(
+      or(
+        like(products.code, `%${upperQuery}%`),
+        like(products.barcode, `%${trimmedQuery}%`),
+        eq(products.barcode, trimmedQuery)
+      )
+    )
     .limit(50);
   return result;
 }
@@ -793,7 +817,7 @@ export async function getSystemAlerts(): Promise<any[]> {
       alerts.push({
         type: 'critical',
         category: 'finalization',
-        message: `Dia ${day.sessionDate} não finalizado`,
+        message: `Dia ${formatDateLongPtBR(day.sessionDate)} não finalizado`,
         date: day.sessionDate,
         itemCount: Number(day.totalItems ?? 0),
       });

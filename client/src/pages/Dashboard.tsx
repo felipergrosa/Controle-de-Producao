@@ -207,34 +207,6 @@ export default function Dashboard() {
         </CardContent>
       </Card>
 
-      {/* Scorecard Executivo */}
-      {(criticalAlerts.length > 0 || warningAlerts.length > 0) && (
-        <Card className="border-orange-200 bg-orange-50/50">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <AlertTriangle className="h-5 w-5 text-orange-600" />
-              Centro de Alertas
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-2">
-              {criticalAlerts.map((alert, idx) => (
-                <div key={idx} className="flex items-center gap-2 text-sm p-2 bg-red-50 border border-red-200 rounded">
-                  <AlertTriangle className="h-4 w-4 text-red-600 flex-shrink-0" />
-                  <span className="text-red-900">{alert.message}</span>
-                </div>
-              ))}
-              {warningAlerts.map((alert, idx) => (
-                <div key={idx} className="flex items-center gap-2 text-sm p-2 bg-yellow-50 border border-yellow-200 rounded">
-                  <AlertTriangle className="h-4 w-4 text-yellow-600 flex-shrink-0" />
-                  <span className="text-yellow-900">{alert.message}</span>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
       {/* KPIs Principais com Comparação */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <Card>
@@ -539,6 +511,34 @@ export default function Dashboard() {
 
         <TabsContent value="details" className="space-y-4">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Centro de Alertas */}
+            {(criticalAlerts.length > 0 || warningAlerts.length > 0) && (
+              <Card className="border-orange-200 bg-orange-50/50">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <AlertTriangle className="h-5 w-5 text-orange-600" />
+                    Centro de Alertas
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-2">
+                    {criticalAlerts.map((alert, idx) => (
+                      <div key={`critical-${idx}`} className="flex items-center gap-2 text-sm p-2 bg-red-50 border border-red-200 rounded">
+                        <AlertTriangle className="h-4 w-4 text-red-600 flex-shrink-0" />
+                        <span className="text-red-900">{alert.message}</span>
+                      </div>
+                    ))}
+                    {warningAlerts.map((alert, idx) => (
+                      <div key={`warning-${idx}`} className="flex items-center gap-2 text-sm p-2 bg-yellow-50 border border-yellow-200 rounded">
+                        <AlertTriangle className="h-4 w-4 text-yellow-600 flex-shrink-0" />
+                        <span className="text-yellow-900">{alert.message}</span>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
             {/* Produtos Inativos */}
             <Card>
               <CardHeader>
@@ -571,7 +571,7 @@ export default function Dashboard() {
             </Card>
 
             {/* Variabilidade */}
-            <Card>
+            <Card className="lg:col-span-2">
               <CardHeader>
                 <CardTitle>Variabilidade de Produção</CardTitle>
                 <CardDescription>Produtos com maior oscilação</CardDescription>
