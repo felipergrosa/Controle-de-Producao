@@ -115,11 +115,23 @@ async function executeMigration(
 ): Promise<void> {
   console.log(`[Migrations] Executando: ${migration.filename}...`);
 
-  // Dividir SQL em statements (separados por ; seguido de newline)
-  const statements = migration.sql
-    .split(/;\s*\n/)
+  // Remover comentários linha-a-linha antes de dividir statements
+  const sanitizedSql = migration.sql
+    .split("\n")
+    .map((line) => {
+      const trimmed = line.trim();
+      if (trimmed.startsWith("--")) {
+        return "";
+      }
+      return line;
+    })
+    .join("\n");
+
+  // Dividir SQL em statements (separados por ; seguido de newline ou fim de arquivo)
+  const statements = sanitizedSql
+    .split(/;\s*(?:\n|$)/)
     .map((s) => s.trim())
-    .filter((s) => s.length > 0 && !s.startsWith("--")); // Remove comentários
+    .filter((s) => s.length > 0);
 
   const ignorableErrorCodes = new Set([1060, 1061, 1091]);
 
