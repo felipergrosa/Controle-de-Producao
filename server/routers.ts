@@ -441,11 +441,16 @@ export const appRouter = router({
           const existing = await getProductionEntryByProductAndDate(input.productId, input.sessionDate);
           if (existing) {
             // Update quantity
+            const updatedQuantity = existing.quantity + input.quantity;
+            const updatedInsertedAt = new Date();
+
             await db
               .update(productionEntries)
-              .set({ quantity: existing.quantity + input.quantity })
+              .set({
+                quantity: updatedQuantity,
+                insertedAt: updatedInsertedAt,
+              })
               .where(eq(productionEntries.id, existing.id));
-            const updatedQuantity = existing.quantity + input.quantity;
             if (ctx.user) {
               await logAudit(
                 ctx.user.id,
@@ -464,7 +469,11 @@ export const appRouter = router({
                 ctx.req.headers["user-agent"],
               );
             }
-            return { ...existing, quantity: updatedQuantity };
+            return {
+              ...existing,
+              quantity: updatedQuantity,
+              insertedAt: updatedInsertedAt,
+            };
           }
         }
 
