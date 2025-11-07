@@ -7,6 +7,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
 import { UserPlus, UserX, UserCheck, Key, Edit, Trash2 } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
@@ -25,10 +26,12 @@ export default function Users() {
   const [newPassword, setNewPassword] = useState("");
   const [newName, setNewName] = useState("");
   const [newRole, setNewRole] = useState<"user" | "admin">("user");
+  const [newDefaultReaderMode, setNewDefaultReaderMode] = useState(false);
   
   const [editEmail, setEditEmail] = useState("");
   const [editName, setEditName] = useState("");
   const [editRole, setEditRole] = useState<"user" | "admin">("user");
+  const [editDefaultReaderMode, setEditDefaultReaderMode] = useState(false);
   
   const [resetPassword, setResetPassword] = useState("");
 
@@ -44,6 +47,7 @@ export default function Users() {
       setNewPassword("");
       setNewName("");
       setNewRole("user");
+      setNewDefaultReaderMode(false);
       utils.users.list.invalidate();
     },
     onError: (error) => {
@@ -108,6 +112,7 @@ export default function Users() {
       password: newPassword,
       name: newName || undefined,
       role: newRole,
+      defaultReaderMode: newDefaultReaderMode,
     });
   };
 
@@ -138,6 +143,7 @@ export default function Users() {
       name: editName || undefined,
       email: editEmail || undefined,
       role: editRole,
+      defaultReaderMode: editDefaultReaderMode,
     });
   };
 
@@ -198,9 +204,16 @@ export default function Users() {
                         </Badge>
                       </TableCell>
                       <TableCell>
-                        <Badge variant={user.isActive ? "default" : "destructive"}>
-                          {user.isActive ? "Ativo" : "Inativo"}
-                        </Badge>
+                        <div className="flex flex-col gap-1">
+                          <Badge variant={user.isActive ? "default" : "destructive"}>
+                            {user.isActive ? "Ativo" : "Inativo"}
+                          </Badge>
+                          {user.defaultReaderMode && (
+                            <Badge className="bg-red-600 text-white hover:bg-red-700">
+                              Modo leitor padrão
+                            </Badge>
+                          )}
+                        </div>
                       </TableCell>
                       <TableCell className="text-sm">
                         {user.lastSignedIn
@@ -218,6 +231,7 @@ export default function Users() {
                               setEditEmail(user.email);
                               setEditName(user.name || "");
                               setEditRole(user.role);
+                              setEditDefaultReaderMode(Boolean(user.defaultReaderMode));
                               setShowEditDialog(true);
                             }}
                             title="Editar Usuário"
@@ -320,6 +334,21 @@ export default function Users() {
                 </SelectContent>
               </Select>
             </div>
+            <div className="flex items-center justify-between rounded-lg border border-input/60 bg-muted/40 px-3 py-2">
+              <div>
+                <Label htmlFor="new-default-reader" className="text-sm font-medium">
+                  Modo leitor ativo por padrão
+                </Label>
+                <p className="text-xs text-muted-foreground">
+                  Ao logar, habilita automaticamente o modo leitor nesta conta.
+                </p>
+              </div>
+              <Switch
+                id="new-default-reader"
+                checked={newDefaultReaderMode}
+                onCheckedChange={setNewDefaultReaderMode}
+              />
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowCreateDialog(false)}>
@@ -407,6 +436,21 @@ export default function Users() {
                   <SelectItem value="admin">Administrador</SelectItem>
                 </SelectContent>
               </Select>
+            </div>
+            <div className="flex items-center justify-between rounded-lg border border-input/60 bg-muted/40 px-3 py-2">
+              <div>
+                <Label htmlFor="edit-default-reader" className="text-sm font-medium">
+                  Modo leitor ativo por padrão
+                </Label>
+                <p className="text-xs text-muted-foreground">
+                  Controla se o modo leitor inicia habilitado para este usuário.
+                </p>
+              </div>
+              <Switch
+                id="edit-default-reader"
+                checked={editDefaultReaderMode}
+                onCheckedChange={setEditDefaultReaderMode}
+              />
             </div>
           </div>
           <DialogFooter>

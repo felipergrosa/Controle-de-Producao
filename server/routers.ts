@@ -109,13 +109,20 @@ export const appRouter = router({
         password: z.string().min(6),
         name: z.string().optional(),
         role: z.enum(['user', 'admin']).default('user'),
+        defaultReaderMode: z.boolean().optional(),
       }))
       .mutation(async ({ input, ctx }) => {
         if (ctx.user?.role !== 'admin') {
           throw new Error('Apenas administradores podem criar usuários');
         }
         
-        const newUser = await createLocalUser(input.email, input.password, input.name, input.role);
+        const newUser = await createLocalUser(
+          input.email,
+          input.password,
+          input.name,
+          input.role,
+          input.defaultReaderMode ?? false,
+        );
         
         await logAudit(
           ctx.user.id,
@@ -220,6 +227,7 @@ export const appRouter = router({
         name: z.string().optional(),
         email: z.string().email().optional(),
         role: z.enum(['user', 'admin']).optional(),
+        defaultReaderMode: z.boolean().optional(),
       }))
       .mutation(async ({ input, ctx }) => {
         if (ctx.user?.role !== 'admin') {
@@ -230,6 +238,7 @@ export const appRouter = router({
           name: input.name,
           email: input.email,
           role: input.role,
+          defaultReaderMode: input.defaultReaderMode,
         });
         
         await logAudit(

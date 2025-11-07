@@ -13,6 +13,7 @@ import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Badge } from "@/components/ui/badge";
+import { cn } from "@/lib/utils";
 
 interface ProductionItem {
   id: string;
@@ -33,7 +34,7 @@ export default function ProductionEntry() {
   const [customDate, setCustomDate] = useState<Date | null>(null);
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [dateInputValue, setDateInputValue] = useState("");
-  
+
   const targetDate = customDate || today;
   const targetDateStr = format(targetDate, "dd/MM/yy", { locale: ptBR });
 
@@ -51,6 +52,7 @@ export default function ProductionEntry() {
   const quantityInputRef = useRef<HTMLInputElement>(null);
   const barcodeBufferRef = useRef("");
   const barcodeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const hasInitializedDefaultReaderMode = useRef(false);
 
   // Utils para invalidação de cache
   const utils = trpc.useUtils();
@@ -109,6 +111,16 @@ export default function ProductionEntry() {
   const items = useMemo(() => {
     return safeEntriesData;
   }, [safeEntriesData]);
+
+  const searchPlaceholder = useMemo(() => {
+    if (barcodeMode) {
+      return "Aponte o leitor para o código de barras e aperte o gatilho";
+    }
+    if (partialSearch) {
+      return "Digite código ou descrição e aperte Enter";
+    }
+    return "Digite o código para buscar e aperte Enter";
+  }, [barcodeMode, partialSearch]);
 
   const findProductByCode = async (query: string) => {
     const normalized = query.trim().toUpperCase();
@@ -327,6 +339,17 @@ export default function ProductionEntry() {
     setTimeout(() => searchInputRef.current?.focus(), 100);
   };
 
+  useEffect(() => {
+    focusSearchInput();
+  }, []);
+
+  useEffect(() => {
+    if (!hasInitializedDefaultReaderMode.current && user) {
+      setBarcodeMode(user.defaultReaderMode ?? false);
+      hasInitializedDefaultReaderMode.current = true;
+    }
+  }, [user]);
+
   const handleCloseNotFoundModal = () => {
     setShowNotFoundModal(false);
     focusSearchInput();
@@ -389,6 +412,7 @@ export default function ProductionEntry() {
         toast.info("Modo leitor ativado. Escaneie um código para lançar quantidade 1.");
       } else {
         toast.info("Modo leitor desativado.");
+        focusSearchInput();
       }
       return next;
     });
@@ -416,7 +440,11 @@ export default function ProductionEntry() {
       toast.error("Não é possível usar busca parcial em dia finalizado");
       return;
     }
-    setPartialSearch((prev) => !prev);
+    setPartialSearch((prev) => {
+      const next = !prev;
+      focusSearchInput();
+      return next;
+    });
   };
 
   const handleToggleChecked = async (item: ProductionItem) => {
@@ -494,13 +522,20 @@ export default function ProductionEntry() {
           <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
             <Label htmlFor="search" className="text-base font-semibold">Buscar Produto</Label>
             <div className="flex flex-wrap items-center justify-end gap-2">
-              {barcodeMode && <Badge variant="secondary">Modo leitor ativo</Badge>}
+              {barcodeMode && (
+                <Badge className="bg-red-600 text-white shadow-sm hover:bg-red-700">
+                  Modo leitor ativo
+                </Badge>
+              )}
               <Button
                 type="button"
-                variant={barcodeMode ? "default" : "outline"}
+                variant={barcodeMode ? "destructive" : "outline"}
                 onClick={toggleBarcodeMode}
                 disabled={isDayFinalized}
-                className="whitespace-nowrap"
+                className={cn(
+                  "whitespace-nowrap",
+                  barcodeMode && "bg-red-600 hover:bg-red-700"
+                )}
                 size="sm"
               >
                 <ScanLine className="mr-2 h-4 w-4" />
@@ -533,7 +568,7 @@ export default function ProductionEntry() {
           <Input
             id="search"
             ref={searchInputRef}
-            placeholder="Digite código ou descrição e pressione Enter"
+            placeholder={searchPlaceholder}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             onKeyDown={handleKeyDown}
@@ -680,7 +715,9 @@ export default function ProductionEntry() {
               Cancelar
             </Button>
             <Button
-              onClick={handleAddProduct}
+              onClick={() => {
+                void handleAddProduct();
+              }}
               disabled={addEntryMutation.isPending}
             >
               {addEntryMutation.isPending ? "Adicionando..." : "Adicionar"}
@@ -691,7 +728,7 @@ export default function ProductionEntry() {
 
       {/* Items List */}
       <Card>
-        <CardContent className="pt-6">
+        <CardContent className="pt-0">
           <div className="mb-4">
             <h2 className="text-xl font-bold">Itens Lançados</h2>
             <div className="text-sm text-muted-foreground mt-1">

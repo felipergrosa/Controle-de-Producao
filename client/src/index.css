@@ -144,8 +144,7 @@
    *
    * Usage: <div className="container">...</div>
    *
-   * For custom widths, use max-w-* utilities directly:
-   * <div className="max-w-6xl mx-auto px-4">...</div>
+   * For custom widths, use max-w-* utilities;
    */
   .container {
     width: 100%;

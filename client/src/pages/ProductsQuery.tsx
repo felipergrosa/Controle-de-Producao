@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -8,6 +8,7 @@ import { toast } from "sonner";
 
 export default function ProductsQuery() {
   const [searchQuery, setSearchQuery] = useState("");
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const [selectedProduct, setSelectedProduct] = useState<any>(null);
   const [showImageModal, setShowImageModal] = useState(false);
   const [showHistoryModal, setShowHistoryModal] = useState(false);
@@ -77,6 +78,13 @@ export default function ProductsQuery() {
 
   const isLoading = searchResults.isLoading || searchByDesc.isLoading;
 
+  useEffect(() => {
+    const timeout = setTimeout(() => {
+      searchInputRef.current?.focus();
+    }, 100);
+    return () => clearTimeout(timeout);
+  }, []);
+
   const handleDelete = async (productId: string) => {
     if (confirm("Tem certeza que deseja deletar este produto?")) {
       await deleteProductMutation.mutateAsync({ id: productId });
@@ -111,6 +119,7 @@ export default function ProductsQuery() {
       {/* Search Input */}
       <div className="relative">
         <Input
+          ref={searchInputRef}
           placeholder="Buscar por código ou descrição"
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}

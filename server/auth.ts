@@ -37,7 +37,8 @@ export async function createLocalUser(
   email: string,
   password: string,
   name?: string,
-  role: "user" | "admin" = "user"
+  role: "user" | "admin" = "user",
+  defaultReaderMode = false
 ): Promise<User> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
@@ -62,6 +63,7 @@ export async function createLocalUser(
     createdAt: now,
     updatedAt: now,
     lastSignedIn: now,
+    defaultReaderMode,
   };
 
   const result = await db.insert(users).values(insertData);
@@ -253,7 +255,7 @@ export async function getUserById(userId: number): Promise<User | null> {
  */
 export async function updateUser(
   userId: number, 
-  data: { name?: string; email?: string; role?: 'user' | 'admin' }
+  data: { name?: string; email?: string; role?: 'user' | 'admin'; defaultReaderMode?: boolean }
 ): Promise<void> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
@@ -262,6 +264,7 @@ export async function updateUser(
   if (data.name !== undefined) updateData.name = data.name;
   if (data.email !== undefined) updateData.email = data.email;
   if (data.role !== undefined) updateData.role = data.role;
+  if (data.defaultReaderMode !== undefined) updateData.defaultReaderMode = data.defaultReaderMode;
 
   await db.update(users).set(updateData).where(eq(users.id, userId));
 }

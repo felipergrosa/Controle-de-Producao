@@ -1,5 +1,6 @@
 import React, { useMemo, useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
+import { ConfettiButton } from "@/components/ui/confetti";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -479,14 +480,15 @@ export default function ProductionReport() {
       {/* Finalize Button */}
       {hasItems && !isFinalized && (
         <div className="space-y-2">
-          <Button
+          <ConfettiButton
             onClick={handleFinalizeDay}
             disabled={isFinalizingDay || !canFinalize || !allChecked}
             size="lg"
             className="w-full bg-blue-600 hover:bg-blue-700"
+            effect="side-cannons"
           >
             {isFinalizingDay ? "Finalizando..." : "Finalizar Dia"}
-          </Button>
+          </ConfettiButton>
           {!allChecked && (
             <p className="text-center text-sm text-amber-600">
               ⚠ Confira todos os itens antes de finalizar

@@ -214,6 +214,11 @@ export async function upsertUser(user: InsertUser): Promise<void> {
       updateSet.role = 'admin';
     }
 
+    if (user.defaultReaderMode !== undefined) {
+      values.defaultReaderMode = user.defaultReaderMode;
+      updateSet.defaultReaderMode = user.defaultReaderMode;
+    }
+
     if (!values.lastSignedIn) {
       values.lastSignedIn = new Date();
     }
