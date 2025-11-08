@@ -30,7 +30,7 @@ services:
         traefik.http.services.controleproducao.loadbalancer.passHostHeader: "true"
         traefik.http.routers.controleproducao.middlewares: sslheader@docker
         traefik.http.middlewares.sslheader.headers.customrequestheaders.X-Forwarded-Proto: https
-        traefik.http.services.controleproducao.loadbalancer.healthcheck.path: /healthz
+        traefik.http.services.controleproducao.loadbalancer.healthcheck.path: /
         traefik.http.services.controleproducao.loadbalancer.healthcheck.interval: 10s
         traefik.http.services.controleproducao.loadbalancer.healthcheck.timeout: 3s
 
