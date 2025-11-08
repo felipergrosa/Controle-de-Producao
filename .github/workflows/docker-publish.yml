@@ -112,7 +112,31 @@ jobs:
             # Deploy via Swarm stack (forçar update da imagem)
             docker stack deploy -c docker-compose.swarm.yml controle-de-producao --with-registry-auth
             docker service update --force --image ${DOCKERHUB_USERNAME}/controle-producao:latest controle-de-producao_frontend
-            
+
+            # Aguardar serviço de banco ficar acessível
+            echo "Aguardando banco de dados ficar disponível..."
+            for i in $(seq 1 20); do
+              DB_CONTAINER=$(docker ps --filter "name=controle-de-producao_backend" -q | head -n1)
+              if [ -n "$DB_CONTAINER" ]; then
+                if docker exec "$DB_CONTAINER" mysqladmin ping -h127.0.0.1 -p"${MYSQL_ROOT_PASSWORD}" --silent; then
+                  echo "Banco pronto!"
+                  break
+                fi
+              fi
+              echo "Tentativa $i/20: aguardando banco responder..."
+              sleep 6
+            done
+
+            if [ -z "$DB_CONTAINER" ]; then
+              echo "Container do banco não encontrado após aguardar. Abortando deploy."
+              exit 1
+            fi
+
+            if ! docker exec "$DB_CONTAINER" mysqladmin ping -h127.0.0.1 -p"${MYSQL_ROOT_PASSWORD}" --silent; then
+              echo "Banco não respondeu após o tempo limite. Abortando deploy."
+              exit 1
+            fi
+
             # Aguardar container principal iniciar
             echo "Aguardando container do app ficar disponível..."
             for i in $(seq 1 15); do
