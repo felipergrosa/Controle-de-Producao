@@ -118,7 +118,7 @@ jobs:
             for i in $(seq 1 20); do
               DB_CONTAINER=$(docker ps --filter "name=controle-de-producao_backend" -q | head -n1)
               if [ -n "$DB_CONTAINER" ]; then
-                if docker exec "$DB_CONTAINER" mysqladmin ping -h127.0.0.1 -p"${MYSQL_ROOT_PASSWORD}" --silent; then
+                if docker exec "$DB_CONTAINER" mysqladmin --user=root --password="${MYSQL_ROOT_PASSWORD}" --host=127.0.0.1 --port=3308 ping --silent; then
                   echo "Banco pronto!"
                   break
                 fi
@@ -132,7 +132,7 @@ jobs:
               exit 1
             fi
 
-            if ! docker exec "$DB_CONTAINER" mysqladmin ping -h127.0.0.1 -p"${MYSQL_ROOT_PASSWORD}" --silent; then
+            if ! docker exec "$DB_CONTAINER" mysqladmin --user=root --password="${MYSQL_ROOT_PASSWORD}" --host=127.0.0.1 --port=3308 ping --silent; then
               echo "Banco não respondeu após o tempo limite. Abortando deploy."
               exit 1
             fi
