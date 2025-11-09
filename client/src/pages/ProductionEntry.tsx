@@ -857,6 +857,18 @@ export default function ProductionEntry() {
         </DialogContent>
       </Dialog>
 
+      {/* Camera Scanner */}
+      <CameraScannerDialog
+        open={cameraScannerOpen}
+        onClose={() => {
+          setCameraScannerOpen(false);
+          if (activeSearchMode === "camera") {
+            focusSearchInput();
+          }
+        }}
+        onDetected={handleCameraDetected}
+      />
+
       {/* Quantity Modal */}
       <Dialog open={showQuantityModal} onOpenChange={(open) => !open && setShowQuantityModal(false)}>
         <DialogContent className="sm:max-w-md">
