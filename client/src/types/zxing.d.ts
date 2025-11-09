@@ -24,6 +24,12 @@ declare module "@zxing/browser" {
       callback?: (result: Result | null, error: Exception | null, controls: IScannerControls) => void
     ): Promise<IScannerControls>;
 
+    decodeFromVideoDevice(
+      deviceId: string | null,
+      videoElement: HTMLVideoElement,
+      callback?: (result: Result | null, error: Exception | null, controls: IScannerControls) => void
+    ): Promise<IScannerControls>;
+
     reset(): void;
 
     static listVideoInputDevices(): Promise<MediaDeviceInfo[]>;

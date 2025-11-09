@@ -55,7 +55,7 @@ export function CameraScannerDialog({ open, onClose, onDetected }: CameraScanner
   }, []);
 
   const startScanner = useCallback(
-    async (deviceId?: string) => {
+    async (deviceId?: string, options?: { skipDeviceId?: boolean }) => {
       if (!isSupported || !videoRef.current) return;
 
       setIsStarting(true);
@@ -65,28 +65,21 @@ export function CameraScannerDialog({ open, onClose, onDetected }: CameraScanner
       const reader = new BrowserMultiFormatReader();
       readerRef.current = reader;
 
+      const skipDeviceId = options?.skipDeviceId ?? false;
+
       try {
         const availableDevices = await BrowserMultiFormatReader.listVideoInputDevices().catch(() => []);
         if (availableDevices.length > 0) {
           setDevices(availableDevices);
         }
 
-        const preferredDevice = deviceId ?? pickPreferredDevice(availableDevices);
+        const preferredDevice = skipDeviceId ? undefined : deviceId ?? pickPreferredDevice(availableDevices);
         setSelectedDeviceId(preferredDevice);
 
-        const controls = await reader.decodeFromConstraints(
-          {
-            audio: false,
-            video: preferredDevice
-              ? { deviceId: { exact: preferredDevice } }
-              : { facingMode: { ideal: "environment" } },
-          },
+        const controls = await reader.decodeFromVideoDevice(
+          skipDeviceId ? null : preferredDevice ?? null,
           videoRef.current,
           (result: Result | null, err: Exception | null) => {
-            if (!controlsRef.current) {
-              controlsRef.current = (controls as IScannerControls | null) ?? null;
-            }
-
             if (result) {
               const text = result.getText();
               if (text) {
@@ -106,10 +99,18 @@ export function CameraScannerDialog({ open, onClose, onDetected }: CameraScanner
         controlsRef.current = controls as ScannerControls;
       } catch (err: any) {
         console.error("Camera access error", err);
+        if (!skipDeviceId && err?.name === "NotReadableError") {
+          console.warn("Retrying camera start without explicit deviceId");
+          await startScanner(undefined, { skipDeviceId: true });
+          return;
+        }
+
         if (err?.name === "NotAllowedError" || err?.message?.includes("denied")) {
           setError("Acesso à câmera negado. Conceda permissão para escanear.");
         } else if (err?.name === "NotFoundError") {
           setError("Nenhuma câmera disponível foi encontrada neste dispositivo.");
+        } else if (err?.name === "NotReadableError") {
+          setError("Não foi possível iniciar a câmera. Verifique se ela não está sendo usada por outro aplicativo.");
         } else {
           setError("Não foi possível iniciar a câmera. Verifique se ela está disponível.");
         }
@@ -136,11 +137,11 @@ export function CameraScannerDialog({ open, onClose, onDetected }: CameraScanner
   const handleChangeDevice = async (event: React.ChangeEvent<HTMLSelectElement>) => {
     const deviceId = event.target.value || undefined;
     setSelectedDeviceId(deviceId);
-    await startScanner(deviceId);
+    await startScanner(deviceId, { skipDeviceId: false });
   };
 
   const handleRetry = () => {
-    startScanner(selectedDeviceId);
+    startScanner(selectedDeviceId, { skipDeviceId: false });
   };
 
   return (
