@@ -7,7 +7,9 @@ import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { AlertCircle, Download, CheckCircle, Circle, Lock, Unlock, Clock } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import * as XLSX from "xlsx";
@@ -393,85 +395,166 @@ export default function ProductionReport() {
               <p className="text-lg">Nenhum dado para esta data</p>
             </div>
           ) : (
-            <div className="border rounded-lg overflow-hidden">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-[120px]">Código</TableHead>
-                    <TableHead>Descrição</TableHead>
-                    <TableHead className="w-[60px] text-center">Qtd</TableHead>
-                    <TableHead className="w-[140px] text-center">Inserido em</TableHead>
-                    <TableHead className="w-[140px] text-center">Conferido</TableHead>
-                    {!isFinalized && <TableHead className="w-[60px] text-center">Ações</TableHead>}
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {displayData.map((item: any, index: number) => {
-                    const isChecked = item.checked;
-                    return (
-                      <TableRow 
-                        key={item.id || index}
-                        className={isChecked ? "bg-green-50" : "bg-amber-50/50"}
-                      >
-                        <TableCell className={`font-mono text-blue-600 ${isChecked ? "line-through" : ""}`}>
-                          {item.code || item.productCode}
-                        </TableCell>
-                        <TableCell className={`max-w-[300px] truncate ${isChecked ? "line-through" : ""}`}>
-                          {item.description || item.productDescription}
-                        </TableCell>
-                        <TableCell className="text-center font-bold">{item.quantity}</TableCell>
-                        <TableCell className="text-sm text-center">
-                          <div className="flex flex-col items-center gap-0.5">
-                            <span className="text-xs">{format(new Date(item.insertedAt), "dd/MM/yyyy HH:mm", { locale: ptBR })}</span>
+            <div className="space-y-3">
+              <div className="md:hidden space-y-3">
+                {displayData.map((item: any, index: number) => {
+                  const code = item.productCode || item.code;
+                  const description = item.productDescription || item.description;
+                  const insertedAt = format(new Date(item.insertedAt), "dd/MM/yyyy HH:mm", { locale: ptBR });
+                  const checkedInfo = item.checked && item.checkedAt
+                    ? [
+                        item.checkedByName ? `por ${item.checkedByName}` : null,
+                        `em ${format(new Date(item.checkedAt), "dd/MM/yyyy HH:mm", { locale: ptBR })}`,
+                      ]
+                        .filter(Boolean)
+                        .join(" ")
+                    : null;
+                  const ModeIcon = item.checked ? CheckCircle : Circle;
+                  return (
+                    <div
+                      key={item.id || index}
+                      className={cn(
+                        "rounded-xl border p-3 shadow-xs space-y-2",
+                        item.checked ? "border-green-400/70 bg-green-50" : "border-amber-300/60 bg-white"
+                      )}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex items-center gap-2">
+                          <ModeIcon className={cn("h-5 w-5", item.checked ? "text-green-600" : "text-yellow-600")} />
+                          <div className="space-y-0.5">
+                            <p className="text-base font-semibold leading-snug">{code}</p>
+                            <p className={cn("text-base font-semibold leading-snug text-muted-foreground", item.checked && "line-through")}>{description}</p>
+                          </div>
+                        </div>
+                        {!isFinalized && (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => handleToggleChecked(item)}
+                            className={cn(
+                              "h-8 w-8 rounded-full",
+                              item.checked
+                                ? "bg-green-500 text-white hover:bg-green-600"
+                                : "bg-amber-500 text-white hover:bg-amber-600"
+                            )}
+                          >
+                            {item.checked ? <CheckCircle size={16} /> : <Circle size={16} />}
+                          </Button>
+                        )}
+                      </div>
+
+                      <div className="space-y-2 text-sm">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs uppercase text-muted-foreground">Quantidade</span>
+                          <span className="font-semibold">{item.quantity}</span>
+                        </div>
+                        <div>
+                          <span className="text-xs uppercase text-muted-foreground">Inserido em</span>
+                          <div className="mt-1 flex flex-wrap gap-x-2">
+                            <span className="font-medium">{insertedAt}</span>
                             {item.createdByName && (
-                              <span className="text-xs text-muted-foreground">{item.createdByName}</span>
+                              <span className="text-muted-foreground">por {item.createdByName}</span>
                             )}
                           </div>
-                        </TableCell>
-                        <TableCell className="text-sm text-center">
-                          <div className="flex flex-col items-center gap-0.5">
-                            <span
-                              className={`font-semibold text-xs ${
-                                isChecked ? "text-green-600" : "text-yellow-600"
-                              }`}
-                            >
-                              {isChecked ? "Sim" : "Não"}
-                            </span>
-                            <span className="text-xs text-muted-foreground">
-                              {isChecked
-                                ? item.checkedByName
-                                  ? `Conferido por ${item.checkedByName}`
-                                  : ""
-                                : "Aguardando conferência"}
-                            </span>
-                            <span className="text-xs text-muted-foreground">
-                              {isChecked && item.checkedAt
-                                ? format(new Date(item.checkedAt), "dd/MM/yyyy HH:mm", { locale: ptBR })
-                                : "--"}
-                            </span>
-                          </div>
-                        </TableCell>
-                        {!isFinalized && (
-                          <TableCell className="text-center">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => handleToggleChecked(item)}
-                              className={`h-8 w-8 p-0 rounded-full ${
-                                isChecked 
-                                  ? "bg-green-500 text-white hover:bg-green-600" 
-                                  : "bg-yellow-400 text-white hover:bg-yellow-500"
-                              }`}
-                            >
-                              {isChecked ? <CheckCircle size={18} /> : <Circle size={18} />}
-                            </Button>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span
+                            className={cn(
+                              "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold",
+                              item.checked ? "bg-green-600 text-white" : "bg-yellow-500 text-white"
+                            )}
+                          >
+                            {item.checked ? "Conferido" : "Aguardando"}
+                          </span>
+                          {checkedInfo && <span className="text-xs text-muted-foreground">{checkedInfo}</span>}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="hidden md:block border rounded-lg overflow-hidden">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-[120px]">Código</TableHead>
+                      <TableHead>Descrição</TableHead>
+                      <TableHead className="w-[60px] text-center">Qtd</TableHead>
+                      <TableHead className="w-[140px] text-center">Inserido em</TableHead>
+                      <TableHead className="w-[140px] text-center">Conferido</TableHead>
+                      {!isFinalized && <TableHead className="w-[60px] text-center">Ações</TableHead>}
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {displayData.map((item: any, index: number) => {
+                      const isChecked = item.checked;
+                      return (
+                        <TableRow 
+                          key={item.id || index}
+                          className={isChecked ? "bg-green-50" : "bg-amber-50/50"}
+                        >
+                          <TableCell className={`font-mono text-blue-600 ${isChecked ? "line-through" : ""}`}>
+                            {item.code || item.productCode}
                           </TableCell>
-                        )}
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
+                          <TableCell className={`max-w-[300px] truncate ${isChecked ? "line-through" : ""}`}>
+                            {item.description || item.productDescription}
+                          </TableCell>
+                          <TableCell className="text-center font-bold">{item.quantity}</TableCell>
+                          <TableCell className="text-sm text-center">
+                            <div className="flex flex-col items-center gap-0.5">
+                              <span className="text-xs">{format(new Date(item.insertedAt), "dd/MM/yyyy HH:mm", { locale: ptBR })}</span>
+                              {item.createdByName && (
+                                <span className="text-xs text-muted-foreground">{item.createdByName}</span>
+                              )}
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-sm text-center">
+                            <div className="flex flex-col items-center gap-0.5">
+                              <span
+                                className={`font-semibold text-xs ${
+                                  isChecked ? "text-green-600" : "text-yellow-600"
+                                }`}
+                              >
+                                {isChecked ? "Sim" : "Não"}
+                              </span>
+                              <span className="text-xs text-muted-foreground">
+                                {isChecked
+                                  ? item.checkedByName
+                                    ? `Conferido por ${item.checkedByName}`
+                                    : ""
+                                  : "Aguardando conferência"}
+                              </span>
+                              <span className="text-xs text-muted-foreground">
+                                {isChecked && item.checkedAt
+                                  ? format(new Date(item.checkedAt), "dd/MM/yyyy HH:mm", { locale: ptBR })
+                                  : "--"}
+                              </span>
+                            </div>
+                          </TableCell>
+                          {!isFinalized && (
+                            <TableCell className="text-center">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleToggleChecked(item)}
+                                className={`h-8 w-8 p-0 rounded-full ${
+                                  isChecked 
+                                    ? "bg-green-500 text-white hover:bg-green-600" 
+                                    : "bg-yellow-400 text-white hover:bg-yellow-500"
+                                }`}
+                              >
+                                {isChecked ? <CheckCircle size={18} /> : <Circle size={18} />}
+                              </Button>
+                            </TableCell>
+                          )}
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
             </div>
           )}
         </CardContent>

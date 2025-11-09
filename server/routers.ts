@@ -67,6 +67,7 @@ const entrySourceSchema = z.enum([
   "code_input",
   "partial_search",
   "barcode",
+  "camera",
   "increment_button",
   "decrement_button",
   "manual_edit",
@@ -299,17 +300,40 @@ export const appRouter = router({
   auditLogs: router({
     list: protectedProcedure
       .input(z.object({
-        userId: z.number().optional(),
         action: z.string().optional(),
         entity: z.string().optional(),
-        limit: z.number().default(100),
+        search: z.string().optional(),
+        startDate: z.string().datetime().optional(),
+        endDate: z.string().datetime().optional(),
+        limit: z.number().min(1).max(200).default(50),
+        cursor: z.object({
+          createdAt: z.string().datetime(),
+          id: z.string().min(1),
+        }).optional(),
       }))
       .query(async ({ input, ctx }) => {
         if (ctx.user?.role !== 'admin') {
           throw new Error('Apenas administradores podem visualizar logs');
         }
-        
-        return await getAuditLogs(input);
+
+        const startDate = input.startDate ? new Date(input.startDate) : undefined;
+        const endDate = input.endDate ? new Date(input.endDate) : undefined;
+        const cursor = input.cursor
+          ? {
+              createdAt: new Date(input.cursor.createdAt),
+              id: input.cursor.id,
+            }
+          : undefined;
+
+        return await getAuditLogs({
+          action: input.action,
+          entity: input.entity,
+          search: input.search,
+          startDate,
+          endDate,
+          limit: input.limit,
+          cursor,
+        });
       }),
   }),
 

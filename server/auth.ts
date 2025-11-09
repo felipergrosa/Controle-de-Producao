@@ -1,6 +1,6 @@
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
-import { eq } from "drizzle-orm";
+import { and, desc, eq, gte, lte, lt, or, sql } from "drizzle-orm";
 import { getDb } from "./db";
 import { users, sessions, auditLogs, InsertUser, User, Session, InsertAuditLog } from "../drizzle/schema";
 
@@ -474,16 +474,31 @@ function formatDateLabel(value: any): string {
 /**
  * Busca logs de auditoria com filtros
  */
-export async function getAuditLogs(filters?: {
-  userId?: number;
+export type AuditLogsCursor = {
+  createdAt: Date;
+  id: string;
+};
+
+export type AuditLogsFilters = {
   action?: string;
   entity?: string;
+  search?: string;
   startDate?: Date;
   endDate?: Date;
   limit?: number;
-}): Promise<any[]> {
+  cursor?: AuditLogsCursor;
+};
+
+export type AuditLogsResult = {
+  items: any[];
+  nextCursor: { createdAt: string; id: string } | null;
+};
+
+export async function getAuditLogs(filters?: AuditLogsFilters): Promise<AuditLogsResult> {
   const db = await getDb();
-  if (!db) return [];
+  if (!db) return { items: [], nextCursor: null };
+
+  const pageSize = Math.min(Math.max(filters?.limit ?? 20, 1), 200);
 
   let query = db
     .select({
@@ -503,8 +518,56 @@ export async function getAuditLogs(filters?: {
     .from(auditLogs)
     .leftJoin(users, eq(auditLogs.userId, users.id));
 
-  // Aplicar filtros (simplificado - em produção usar where conditions)
-  const result = await query.limit(filters?.limit ?? 100);
-  
-  return result;
+  const conditions: any[] = [];
+
+  if (filters?.action) {
+    conditions.push(eq(auditLogs.action, filters.action));
+  }
+
+  if (filters?.entity) {
+    conditions.push(eq(auditLogs.entity, filters.entity));
+  }
+
+  if (filters?.startDate) {
+    conditions.push(gte(auditLogs.createdAt, filters.startDate));
+  }
+
+  if (filters?.endDate) {
+    conditions.push(lte(auditLogs.createdAt, filters.endDate));
+  }
+
+  if (filters?.search) {
+    const normalized = `%${filters.search.toLowerCase()}%`;
+    conditions.push(
+      sql`(LOWER(${users.name}) LIKE ${normalized} OR LOWER(${users.email}) LIKE ${normalized} OR LOWER(${auditLogs.entityCode}) LIKE ${normalized})`
+    );
+  }
+
+  if (filters?.cursor) {
+    conditions.push(
+      or(
+        lt(auditLogs.createdAt, filters.cursor.createdAt),
+        and(eq(auditLogs.createdAt, filters.cursor.createdAt), lt(auditLogs.id, filters.cursor.id))
+      )
+    );
+  }
+
+  if (conditions.length > 0) {
+    query = query.where(and(...conditions));
+  }
+
+  const rows = await query
+    .orderBy(desc(auditLogs.createdAt), desc(auditLogs.id))
+    .limit(pageSize + 1);
+
+  const items = rows.slice(0, pageSize);
+  const hasMore = rows.length > pageSize;
+  const nextCursor = hasMore
+    ? {
+        createdAt: items[items.length - 1].createdAt.toISOString(),
+        id: items[items.length - 1].id,
+      }
+    : null;
+
+  return { items, nextCursor };
 }
