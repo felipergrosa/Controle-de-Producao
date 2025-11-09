@@ -481,6 +481,20 @@ export default function ProductionEntry() {
   };
 
   useEffect(() => {
+    console.log("[ProductionEntry] cameraScannerOpen", cameraScannerOpen);
+  }, [cameraScannerOpen]);
+
+  useEffect(() => {
+    console.log("[ProductionEntry] activeSearchMode", activeSearchMode);
+  }, [activeSearchMode]);
+
+  useEffect(() => {
+    if (activeSearchMode !== "partial") {
+      setMobileModeAccordionOpen(false);
+    }
+  }, [activeSearchMode]);
+
+  useEffect(() => {
     focusSearchInput();
   }, []);
 
@@ -545,33 +559,37 @@ export default function ProductionEntry() {
       return;
     }
 
-    setActiveSearchMode((current) => {
-      if (current === mode) {
+    console.log("[ProductionEntry] activateMode called", { mode, activeSearchMode });
+
+    if (activeSearchMode === mode) {
+      if (mode === "camera") {
         setCameraScannerOpen(false);
-        focusSearchInput();
-        toast.info("Voltando para busca por código (padrão).");
-        setMobileModeAccordionOpen(false);
-        return null;
       }
-
-      switch (mode) {
-        case "reader":
-          searchInputRef.current?.blur();
-          toast.info("Modo leitor ativo. Escaneie o código para lançar quantidade 1.");
-          break;
-        case "camera":
-          toast.info("Modo câmera ativo. Aguarde a abertura do scanner.");
-          break;
-        case "partial":
-          focusSearchInput();
-          toast.info("Modo parcial ativo. Digite ao menos 2 caracteres para buscar.");
-          break;
-      }
-
-      setCameraScannerOpen(mode === "camera");
+      focusSearchInput();
+      toast.info("Voltando para busca por código (padrão).");
+      setActiveSearchMode(null);
       setMobileModeAccordionOpen(false);
-      return mode;
-    });
+      return;
+    }
+
+    switch (mode) {
+      case "reader":
+        searchInputRef.current?.blur();
+        toast.info("Modo leitor ativo. Escaneie o código para lançar quantidade 1.");
+        break;
+      case "camera":
+        searchInputRef.current?.blur();
+        toast.info("Modo câmera ativo. Aguarde a abertura do scanner.");
+        break;
+      case "partial":
+        focusSearchInput();
+        toast.info("Modo parcial ativo. Digite ao menos 2 caracteres para buscar.");
+        break;
+    }
+
+    setActiveSearchMode(mode);
+    setCameraScannerOpen(mode === "camera");
+    setMobileModeAccordionOpen(false);
   };
 
   const handleDateSelection = () => {
@@ -696,8 +714,8 @@ export default function ProductionEntry() {
             <Accordion
               type="single"
               collapsible
-              value={mobileModeAccordionOpen ? "mode-selector" : undefined}
-              onValueChange={(value) => setMobileModeAccordionOpen(Boolean(value))}
+              value={mobileModeAccordionOpen ? "mode-selector" : ""}
+              onValueChange={(value) => setMobileModeAccordionOpen(value === "mode-selector")}
               className="border rounded-lg"
             >
               <AccordionItem value="mode-selector" className="border-b-0">
@@ -725,7 +743,10 @@ export default function ProductionEntry() {
                             "justify-start",
                             isActive && config.activeClasses
                           )}
-                          onClick={() => activateMode(mode)}
+                          onClick={() => {
+                            activateMode(mode);
+                            setMobileModeAccordionOpen(false);
+                          }}
                         >
                           <Icon className="mr-2 h-4 w-4" />
                           {config.label}
@@ -735,7 +756,10 @@ export default function ProductionEntry() {
                     <Button
                       type="button"
                       variant={customDate ? "default" : "outline"}
-                      onClick={() => setShowDatePicker(true)}
+                      onClick={() => {
+                        setShowDatePicker(true);
+                        setMobileModeAccordionOpen(false);
+                      }}
                       className="justify-start"
                     >
                       <Calendar className="mr-2 h-4 w-4" />
