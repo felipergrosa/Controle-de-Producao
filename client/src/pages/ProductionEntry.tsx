@@ -103,6 +103,7 @@ export default function ProductionEntry() {
   const barcodeBufferRef = useRef("");
   const barcodeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
+  const lastNonCameraModeRef = useRef<SearchMode | null>("reader");
   const hasInitializedDefaultReaderMode = useRef(false);
 
   // Utils para invalidação de cache
@@ -644,6 +645,12 @@ export default function ProductionEntry() {
         break;
     }
 
+    if (mode === "camera") {
+      lastNonCameraModeRef.current = activeSearchMode ?? lastNonCameraModeRef.current ?? "reader";
+    } else {
+      lastNonCameraModeRef.current = mode;
+    }
+
     setActiveSearchMode(mode);
     setCameraScannerOpen(mode === "camera");
     setMobileModeAccordionOpen(false);
@@ -944,8 +951,13 @@ export default function ProductionEntry() {
         onClose={() => {
           setCameraScannerOpen(false);
           if (activeSearchMode === "camera") {
-            focusSearchInput();
+            const fallbackMode = lastNonCameraModeRef.current ?? "reader";
+            setActiveSearchMode(fallbackMode);
+            if (fallbackMode === "reader") {
+              searchInputRef.current?.blur();
+            }
           }
+          focusSearchInput();
         }}
         onDetected={handleCameraDetected}
       />
