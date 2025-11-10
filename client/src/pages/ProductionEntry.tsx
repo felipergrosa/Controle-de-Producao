@@ -102,6 +102,7 @@ export default function ProductionEntry() {
   const quantityInputRef = useRef<HTMLInputElement>(null);
   const barcodeBufferRef = useRef("");
   const barcodeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
   const hasInitializedDefaultReaderMode = useRef(false);
 
   // Utils para invalidação de cache
@@ -422,6 +423,61 @@ export default function ProductionEntry() {
     return () => window.removeEventListener("keydown", handler);
   }, [inlineEditId]);
 
+  const playBeep = useCallback(async () => {
+    if (typeof window === "undefined") return;
+
+    try {
+      const AudioContextClass = window.AudioContext ?? (window as any).webkitAudioContext;
+      if (!AudioContextClass) return;
+
+      if (!audioContextRef.current) {
+        audioContextRef.current = new AudioContextClass();
+      }
+
+      const ctx = audioContextRef.current;
+      if (!ctx) return;
+
+      if (ctx.state === "suspended") {
+        await ctx.resume();
+      }
+
+      const oscillator = ctx.createOscillator();
+      const gainNode = ctx.createGain();
+
+      oscillator.type = "sine";
+      oscillator.frequency.value = 1100;
+
+      const now = ctx.currentTime;
+
+      gainNode.gain.setValueAtTime(0.001, now);
+      gainNode.gain.exponentialRampToValueAtTime(0.15, now + 0.02);
+      gainNode.gain.exponentialRampToValueAtTime(0.001, now + 0.18);
+
+      oscillator.connect(gainNode);
+      gainNode.connect(ctx.destination);
+
+      oscillator.start(now);
+      oscillator.stop(now + 0.2);
+
+      oscillator.onended = () => {
+        oscillator.disconnect();
+        gainNode.disconnect();
+      };
+    } catch (error) {
+      console.error("Erro ao reproduzir beep", error);
+    }
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      const ctx = audioContextRef.current;
+      audioContextRef.current = null;
+      if (ctx?.close) {
+        void ctx.close().catch(() => undefined);
+      }
+    };
+  }, []);
+
   const addProductByCode = async (rawCode: string, source: EntrySource) => {
     const code = rawCode.trim();
     if (!code) return;
@@ -454,6 +510,7 @@ export default function ProductionEntry() {
         grouping: true,
         source,
       });
+      void playBeep();
       toast.success(`Produto ${product.code} lançado`);
     } catch (error: any) {
       toast.error(error?.message || "Erro ao adicionar produto");
@@ -892,6 +949,23 @@ export default function ProductionEntry() {
         }}
         onDetected={handleCameraDetected}
       />
+
+      {activeSearchMode === "camera" && !isDayFinalized && (
+        <div className="fixed bottom-6 left-1/2 z-40 flex -translate-x-1/2 transform">
+          <Button
+            type="button"
+            size="icon"
+            className="h-14 w-14 rounded-full bg-orange-500 text-white hover:bg-orange-600 shadow-lg shadow-orange-500/30"
+            onClick={() => {
+              setCameraScannerOpen(true);
+            }}
+            disabled={cameraScannerOpen}
+            aria-label="Reabrir câmera"
+          >
+            <Camera className="h-6 w-6" />
+          </Button>
+        </div>
+      )}
 
       {/* Quantity Modal */}
       <Dialog open={showQuantityModal} onOpenChange={(open) => !open && setShowQuantityModal(false)}>

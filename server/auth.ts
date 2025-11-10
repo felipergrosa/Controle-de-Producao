@@ -84,11 +84,19 @@ export async function loginLocal(
   ipAddress?: string,
   userAgent?: string
 ): Promise<{ user: User; session: Session }> {
+  const timestamp = new Date().toISOString();
+  console.info(`[Auth][${timestamp}] Login attempt`, { email, ipAddress, userAgent });
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
   // Buscar usuário
-  const userResult = await db.select().from(users).where(eq(users.email, email)).limit(1);
+  let userResult: User[] = [];
+  try {
+    userResult = await db.select().from(users).where(eq(users.email, email)).limit(1);
+  } catch (error) {
+    console.error(`[Auth][${timestamp}] Failed to query user`, { email, error });
+    throw error;
+  }
   if (userResult.length === 0) {
     throw new Error("Email ou senha inválidos");
   }
@@ -118,16 +126,22 @@ export async function loginLocal(
   const expiresAt = new Date(Date.now() + SESSION_MAX_AGE_MS);
 
   const sessionId = crypto.randomUUID();
-  await db.insert(sessions).values({
-    id: sessionId,
-    userId: user.id,
-    token,
-    expiresAt,
-    ipAddress: ipAddress ?? null,
-    userAgent: userAgent ?? null,
-  });
+  try {
+    await db.insert(sessions).values({
+      id: sessionId,
+      userId: user.id,
+      token,
+      expiresAt,
+      ipAddress: ipAddress ?? null,
+      userAgent: userAgent ?? null,
+    });
+  } catch (error) {
+    console.error(`[Auth][${timestamp}] Failed to create session`, { userId: user.id, error });
+    throw error;
+  }
 
   const newSession = await db.select().from(sessions).where(eq(sessions.id, sessionId)).limit(1);
+  console.info(`[Auth][${timestamp}] Login successful`, { userId: user.id, sessionId });
 
   return { user, session: newSession[0] };
 }

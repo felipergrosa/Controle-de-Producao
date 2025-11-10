@@ -7,6 +7,22 @@ import { ENV } from './_core/env';
 
 let _db: ReturnType<typeof drizzle> | null = null;
 let pool: ReturnType<typeof mysql.createPool> | null = null;
+let connectPromise: Promise<ReturnType<typeof drizzle> | null> | null = null;
+
+const DB_CONNECT_MAX_RETRIES = Math.max(1, Number(process.env.DB_CONNECT_MAX_RETRIES ?? 3));
+const DB_CONNECT_RETRY_DELAY_MS = Math.max(100, Number(process.env.DB_CONNECT_RETRY_DELAY_MS ?? 1000));
+
+type LogLevel = "info" | "warn" | "error";
+
+function logDb(level: LogLevel, message: string, ...args: unknown[]) {
+  const timestamp = new Date().toISOString();
+  const logger = level === "error" ? console.error : level === "warn" ? console.warn : console.log;
+  logger(`[Database][${timestamp}] ${message}`, ...args);
+}
+
+function wait(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 function toDateOnlyString(date: Date): string {
   const copy = new Date(date);
@@ -149,23 +165,48 @@ function formatDateLongPtBR(value: Date | string): string {
 export async function getDb() {
   if (_db) return _db;
 
-  const connectionString = process.env.DATABASE_URL;
-  if (!connectionString) {
-    console.warn("[Database] DATABASE_URL is not configured");
-    return null;
+  if (connectPromise) {
+    return connectPromise;
   }
 
-  try {
-    if (!pool) {
-      pool = mysql.createPool(connectionString);
+  connectPromise = (async () => {
+    const connectionString = process.env.DATABASE_URL;
+    if (!connectionString) {
+      logDb("warn", "DATABASE_URL is not configured");
+      return null;
     }
-    _db = drizzle(pool as any) as ReturnType<typeof drizzle>;
-  } catch (error) {
-    console.warn("[Database] Failed to connect:", error);
-    _db = null;
-  }
 
-  return _db;
+    for (let attempt = 1; attempt <= DB_CONNECT_MAX_RETRIES; attempt++) {
+      let nextPool: ReturnType<typeof mysql.createPool> | null = null;
+      try {
+        nextPool = mysql.createPool(connectionString);
+        const connection = await nextPool.getConnection();
+        connection.release();
+
+        pool = nextPool;
+        _db = drizzle(nextPool as any) as ReturnType<typeof drizzle>;
+        logDb("info", `Database connection established (attempt ${attempt})`);
+        connectPromise = null;
+        return _db;
+      } catch (error) {
+        if (nextPool) {
+          await nextPool.end().catch(() => undefined);
+        }
+        logDb("error", `Failed to connect to database (attempt ${attempt}/${DB_CONNECT_MAX_RETRIES})`, error);
+        pool = null;
+        _db = null;
+        if (attempt < DB_CONNECT_MAX_RETRIES) {
+          await wait(DB_CONNECT_RETRY_DELAY_MS * attempt);
+        }
+      }
+    }
+
+    logDb("error", "Exceeded maximum retries to connect to database");
+    connectPromise = null;
+    return null;
+  })();
+
+  return connectPromise;
 }
 
 export async function upsertUser(user: InsertUser): Promise<void> {
