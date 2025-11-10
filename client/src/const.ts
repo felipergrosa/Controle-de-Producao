@@ -5,25 +5,3 @@ export const APP_TITLE = import.meta.env.VITE_APP_TITLE || "App";
 export const APP_LOGO =
   import.meta.env.VITE_APP_LOGO ||
   "https://pedidos.nobreluminarias.com.br/assets/images/logo-icon.png";
-
-// Generate login URL at runtime so redirect URI reflects the current origin.
-export const getLoginUrl = () => {
-  const oauthPortalUrl = import.meta.env.VITE_OAUTH_PORTAL_URL;
-  const appId = import.meta.env.VITE_APP_ID;
-  
-  // Return empty string if OAuth is not configured
-  if (!oauthPortalUrl || !appId) {
-    return "";
-  }
-  
-  const redirectUri = `${window.location.origin}/api/oauth/callback`;
-  const state = btoa(redirectUri);
-
-  const url = new URL(`${oauthPortalUrl}/app-auth`);
-  url.searchParams.set("appId", appId);
-  url.searchParams.set("redirectUri", redirectUri);
-  url.searchParams.set("state", state);
-  url.searchParams.set("type", "signIn");
-
-  return url.toString();
-};

@@ -6,7 +6,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { APP_TITLE, getLoginUrl } from "@/const";
+import { APP_TITLE } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
 import { LayoutDashboard, LogOut, Users, BarChart3, ClipboardList, Upload, FileText } from "lucide-react";
 import { useLocation } from "wouter";
@@ -36,44 +36,7 @@ export default function DashboardLayout({
     return <DashboardLayoutSkeleton />
   }
 
-  // Se OAuth não está configurado, permitir acesso sem autenticação
-  const loginUrl = getLoginUrl();
-  if (!user && loginUrl) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="flex flex-col items-center gap-8 p-8 max-w-md w-full">
-          <div className="flex flex-col items-center gap-6">
-            <div className="relative group">
-              <div className="relative">
-                <img
-                  src="/logo-nobre.png"
-                  alt={APP_TITLE}
-                  className="h-24 w-24 rounded-xl object-cover shadow"
-                />
-              </div>
-            </div>
-            <div className="text-center space-y-2">
-              <h1 className="text-2xl font-bold tracking-tight">{APP_TITLE}</h1>
-              <p className="text-sm text-muted-foreground">
-                Please sign in to continue
-              </p>
-            </div>
-          </div>
-          <Button
-            onClick={() => {
-              window.location.href = loginUrl;
-            }}
-            size="lg"
-            className="w-full shadow-lg hover:shadow-xl transition-all"
-          >
-            Sign in
-          </Button>
-        </div>
-      </div>
-    );
-  }
-
-  if (!user && !loginUrl) {
+  if (!user) {
     if (location !== "/login") {
       setLocation("/login");
     }

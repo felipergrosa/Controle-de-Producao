@@ -2,7 +2,7 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useLocation } from "wouter";
-import { APP_LOGO, APP_TITLE, getLoginUrl } from "@/const";
+import { APP_LOGO, APP_TITLE } from "@/const";
 import { BarChart3, Upload, ClipboardList, Search, Loader2 } from "lucide-react";
 
 export default function Home() {
@@ -39,13 +39,7 @@ export default function Home() {
               </p>
               <Button
                 onClick={() => {
-                  const loginUrl = getLoginUrl();
-                  if (loginUrl) {
-                    window.location.href = loginUrl;
-                  } else {
-                    // Se OAuth não está configurado, navegar diretamente para o sistema
-                    setLocation("/production");
-                  }
+                  setLocation("/login");
                 }}
                 size="lg"
                 className="w-full"
