@@ -13,4 +13,5 @@ export const ENV = {
     (process.env.VITE_APP_ID ?? "").trim() &&
     (process.env.JWT_SECRET ?? "").trim()
   ),
+  
 };
