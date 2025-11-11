@@ -4,13 +4,17 @@ import { NotFoundException, type Result, type Exception } from "@zxing/library";
 
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Label } from "@/components/ui/label";
 import { AlertCircle, CameraOff, RefreshCcw } from "lucide-react";
+
+interface CameraDetectedPayload {
+  code: string;
+  resume: () => Promise<void>;
+}
 
 interface CameraScannerDialogProps {
   open: boolean;
   onClose: () => void;
-  onDetected: (code: string) => void;
+  onDetected: (payload: CameraDetectedPayload) => void;
 }
 
 type ScannerControls = { stop: () => void } | null;
@@ -30,14 +34,15 @@ function pickPreferredDevice(devices: MediaDeviceInfo[]): string | undefined {
   return devices[0]?.deviceId;
 }
 
+export type { CameraDetectedPayload };
+
 export function CameraScannerDialog({ open, onClose, onDetected }: CameraScannerDialogProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const readerRef = useRef<BrowserMultiFormatReader | null>(null);
   const controlsRef = useRef<ScannerControls>(null);
   const [isStarting, setIsStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
-  const [selectedDeviceId, setSelectedDeviceId] = useState<string | undefined>();
+  const selectedDeviceIdRef = useRef<string | undefined>(undefined);
 
   const isSupported = useMemo(() => {
     return typeof navigator !== "undefined" && !!navigator.mediaDevices?.getUserMedia;
@@ -69,12 +74,9 @@ export function CameraScannerDialog({ open, onClose, onDetected }: CameraScanner
 
       try {
         const availableDevices = await BrowserMultiFormatReader.listVideoInputDevices().catch(() => []);
-        if (availableDevices.length > 0) {
-          setDevices(availableDevices);
-        }
 
         const preferredDevice = skipDeviceId ? undefined : deviceId ?? pickPreferredDevice(availableDevices);
-        setSelectedDeviceId(preferredDevice);
+        selectedDeviceIdRef.current = preferredDevice;
 
         const controls = await reader.decodeFromVideoDevice(
           skipDeviceId ? null : preferredDevice ?? null,
@@ -84,8 +86,10 @@ export function CameraScannerDialog({ open, onClose, onDetected }: CameraScanner
               const text = result.getText();
               if (text) {
                 stopScanner();
-                onDetected(text);
-                onClose();
+                const resume = async () => {
+                  await startScanner(selectedDeviceIdRef.current, { skipDeviceId: false });
+                };
+                onDetected({ code: text, resume });
               }
             }
 
@@ -134,14 +138,8 @@ export function CameraScannerDialog({ open, onClose, onDetected }: CameraScanner
     };
   }, [open, startScanner, stopScanner]);
 
-  const handleChangeDevice = async (event: React.ChangeEvent<HTMLSelectElement>) => {
-    const deviceId = event.target.value || undefined;
-    setSelectedDeviceId(deviceId);
-    await startScanner(deviceId, { skipDeviceId: false });
-  };
-
   const handleRetry = () => {
-    startScanner(selectedDeviceId, { skipDeviceId: false });
+    startScanner(selectedDeviceIdRef.current, { skipDeviceId: false });
   };
 
   return (
@@ -178,24 +176,6 @@ export function CameraScannerDialog({ open, onClose, onDetected }: CameraScanner
                 Aproximar o código até ficar nítido acelera a leitura.
               </div>
             </div>
-
-            {devices.length > 1 && (
-              <div className="space-y-1">
-                <Label htmlFor="camera-device">Câmera</Label>
-                <select
-                  id="camera-device"
-                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/40"
-                  value={selectedDeviceId ?? ""}
-                  onChange={handleChangeDevice}
-                >
-                  {devices.map((device) => (
-                    <option key={device.deviceId} value={device.deviceId}>
-                      {device.label || `Câmera ${device.deviceId.slice(-4)}`}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
 
             {error && (
               <div className="flex items-center gap-2 rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive">

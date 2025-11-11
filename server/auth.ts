@@ -3,6 +3,7 @@ import crypto from "crypto";
 import { and, desc, eq, gte, lte, lt, or, sql } from "drizzle-orm";
 import { getDb } from "./db";
 import { users, sessions, auditLogs, InsertUser, User, Session, InsertAuditLog } from "../drizzle/schema";
+import { getBrazilTimestamp } from "./_core/time";
 
 const BCRYPT_ROUNDS = 10;
 const SESSION_DURATION_DAYS = 365;
@@ -84,7 +85,7 @@ export async function loginLocal(
   ipAddress?: string,
   userAgent?: string
 ): Promise<{ user: User; session: Session }> {
-  const timestamp = new Date().toISOString();
+  const timestamp = getBrazilTimestamp();
   console.info(`[Auth][${timestamp}] Login attempt`, { email, ipAddress, userAgent });
   const db = await getDb();
   if (!db) throw new Error("Database not available");
@@ -136,12 +137,12 @@ export async function loginLocal(
       userAgent: userAgent ?? null,
     });
   } catch (error) {
-    console.error(`[Auth][${timestamp}] Failed to create session`, { userId: user.id, error });
+    console.error(`[Auth][${getBrazilTimestamp()}] Failed to create session`, { userId: user.id, error });
     throw error;
   }
 
   const newSession = await db.select().from(sessions).where(eq(sessions.id, sessionId)).limit(1);
-  console.info(`[Auth][${timestamp}] Login successful`, { userId: user.id, sessionId });
+  console.info(`[Auth][${getBrazilTimestamp()}] Login successful`, { userId: user.id, sessionId });
 
   return { user, session: newSession[0] };
 }
@@ -514,7 +515,7 @@ export async function getAuditLogs(filters?: AuditLogsFilters): Promise<AuditLog
 
   const pageSize = Math.min(Math.max(filters?.limit ?? 20, 1), 200);
 
-  let query = db
+  const baseQuery = db
     .select({
       id: auditLogs.id,
       userId: auditLogs.userId,
@@ -566,11 +567,9 @@ export async function getAuditLogs(filters?: AuditLogsFilters): Promise<AuditLog
     );
   }
 
-  if (conditions.length > 0) {
-    query = query.where(and(...conditions));
-  }
+  const filteredQuery = conditions.length > 0 ? baseQuery.where(and(...conditions)) : baseQuery;
 
-  const rows = await query
+  const rows = await filteredQuery
     .orderBy(desc(auditLogs.createdAt), desc(auditLogs.id))
     .limit(pageSize + 1);
 

@@ -6,7 +6,8 @@ import type { Pool as CallbackPool } from "mysql2";
 import type { PoolOptions } from "mysql2/promise";
 type MysqlPool = ReturnType<typeof mysql.createPool>;
 import { InsertUser, users, products, productionEntries, productionDaySnapshots, productHistory, Product, ProductionEntry, ProductionDaySnapshot, ProductHistory, InsertProductHistory } from "../drizzle/schema";
-import { ENV } from './_core/env';
+import { ENV } from "./_core/env";
+import { getBrazilTimestamp } from "./_core/time";
 
 let _db: ReturnType<typeof drizzle> | null = null;
 let pool: MysqlPool | null = null;
@@ -48,7 +49,7 @@ function wait(ms: number) {
 }
 
 function logDb(level: LogLevel, message: string, ...args: unknown[]) {
-  const timestamp = new Date().toISOString();
+  const timestamp = getBrazilTimestamp();
   const logger = level === "error" ? console.error : level === "warn" ? console.warn : console.log;
   logger(`[Database][${timestamp}] ${message}`, ...args);
 }
