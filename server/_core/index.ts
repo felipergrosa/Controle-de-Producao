@@ -46,6 +46,9 @@ async function startServer() {
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
   // Cookie parser for session management
   app.use(cookieParser());
+  app.get("/healthz", (_req, res) => {
+    res.status(200).json({ status: "ok" });
+  });
   // OAuth callback under /api/oauth/callback (only if enabled)
   if (ENV.oauthEnabled) {
     registerOAuthRoutes(app);

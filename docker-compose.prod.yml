@@ -30,7 +30,7 @@ services:
         traefik.http.services.controleproducao.loadbalancer.passHostHeader: "true"
         traefik.http.routers.controleproducao.middlewares: sslheader@docker
         traefik.http.middlewares.sslheader.headers.customrequestheaders.X-Forwarded-Proto: https
-        traefik.http.services.controleproducao.loadbalancer.healthcheck.path: /
+        traefik.http.services.controleproducao.loadbalancer.healthcheck.path: /healthz
         traefik.http.services.controleproducao.loadbalancer.healthcheck.interval: 10s
         traefik.http.services.controleproducao.loadbalancer.healthcheck.timeout: 3s
 
@@ -52,7 +52,13 @@ services:
       timeout: 5s
       retries: 5
       start_period: 30s
-    command: --port=3308
+    command: >
+      --port=3308
+      --wait_timeout=28800
+      --interactive_timeout=28800
+      --net_read_timeout=120
+      --net_write_timeout=120
+      --max_connections=200
     networks:
       - nobreluminarias
 

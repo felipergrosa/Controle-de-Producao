@@ -2,17 +2,50 @@ import { sql, eq, and, like, desc, or } from "drizzle-orm";
 import { alias } from "drizzle-orm/mysql-core";
 import { drizzle } from "drizzle-orm/mysql2";
 import mysql from "mysql2/promise";
+import type { Pool as CallbackPool } from "mysql2";
+import type { PoolOptions } from "mysql2/promise";
+type MysqlPool = ReturnType<typeof mysql.createPool>;
 import { InsertUser, users, products, productionEntries, productionDaySnapshots, productHistory, Product, ProductionEntry, ProductionDaySnapshot, ProductHistory, InsertProductHistory } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
 let _db: ReturnType<typeof drizzle> | null = null;
-let pool: ReturnType<typeof mysql.createPool> | null = null;
+let pool: MysqlPool | null = null;
 let connectPromise: Promise<ReturnType<typeof drizzle> | null> | null = null;
+let lastPoolValidation = 0;
+let poolResetPromise: Promise<void> | null = null;
 
 const DB_CONNECT_MAX_RETRIES = Math.max(1, Number(process.env.DB_CONNECT_MAX_RETRIES ?? 3));
 const DB_CONNECT_RETRY_DELAY_MS = Math.max(100, Number(process.env.DB_CONNECT_RETRY_DELAY_MS ?? 1000));
+const DB_POOL_MAX_CONNECTIONS = Math.max(1, Number(process.env.DB_POOL_MAX_CONNECTIONS ?? 10));
+const DB_CONNECT_TIMEOUT_MS = Math.max(1000, Number(process.env.DB_CONNECT_TIMEOUT_MS ?? 10000));
+const DB_POOL_VALIDATION_INTERVAL_MS = Math.max(
+  5000,
+  Number(process.env.DB_POOL_VALIDATION_INTERVAL_MS ?? 60000)
+);
+const CONNECTION_ERROR_CODES = new Set([
+  "PROTOCOL_CONNECTION_LOST",
+  "ECONNRESET",
+  "ECONNREFUSED",
+  "ER_CON_COUNT_ERROR",
+  "ETIMEDOUT",
+  "EPIPE",
+]);
+const DB_POOL_HEALTHCHECK_QUERY = "SELECT 1";
+const POOL_ERROR_HANDLER_ATTACHED = Symbol("poolErrorHandlerAttached");
 
 type LogLevel = "info" | "warn" | "error";
+
+function parseBooleanParam(value: string | null): boolean | undefined {
+  if (value == null) return undefined;
+  const normalized = value.trim().toLowerCase();
+  if (["1", "true", "yes", "on"].includes(normalized)) return true;
+  if (["0", "false", "no", "off"].includes(normalized)) return false;
+  return undefined;
+}
+
+function wait(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 function logDb(level: LogLevel, message: string, ...args: unknown[]) {
   const timestamp = new Date().toISOString();
@@ -20,8 +53,211 @@ function logDb(level: LogLevel, message: string, ...args: unknown[]) {
   logger(`[Database][${timestamp}] ${message}`, ...args);
 }
 
-function wait(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+function buildPoolOptions(connectionString: string): PoolOptions | string {
+  try {
+    const url = new URL(connectionString);
+    if (!url.protocol.startsWith("mysql")) {
+      throw new Error(`Unsupported protocol: ${url.protocol}`);
+    }
+
+    const options: PoolOptions = {
+      host: url.hostname,
+      port: url.port ? Number(url.port) : undefined,
+      user: decodeURIComponent(url.username ?? ""),
+      password: decodeURIComponent(url.password ?? ""),
+      database: url.pathname ? url.pathname.replace(/^\//, "") || undefined : undefined,
+      waitForConnections: true,
+      connectionLimit: DB_POOL_MAX_CONNECTIONS,
+      queueLimit: 0,
+      enableKeepAlive: true,
+      keepAliveInitialDelay: 0,
+      connectTimeout: DB_CONNECT_TIMEOUT_MS,
+      supportBigNumbers: true,
+    };
+
+    const socketPath = url.searchParams.get("socket") ?? url.searchParams.get("socketPath");
+    if (socketPath) {
+      options.socketPath = socketPath;
+    }
+
+    const timezone = url.searchParams.get("timezone");
+    if (timezone) {
+      options.timezone = timezone;
+    }
+
+    const multipleStatements = parseBooleanParam(url.searchParams.get("multipleStatements"));
+    if (multipleStatements !== undefined) {
+      options.multipleStatements = multipleStatements;
+    }
+
+    const decimalNumbers = parseBooleanParam(url.searchParams.get("decimalNumbers"));
+    if (decimalNumbers !== undefined) {
+      options.decimalNumbers = decimalNumbers;
+    }
+
+    const enableKeepAlive = parseBooleanParam(url.searchParams.get("enableKeepAlive"));
+    if (enableKeepAlive !== undefined) {
+      options.enableKeepAlive = enableKeepAlive;
+    }
+
+    const keepAliveDelay = url.searchParams.get("keepAliveInitialDelay");
+    if (keepAliveDelay) {
+      const parsed = Number(keepAliveDelay);
+      if (!Number.isNaN(parsed)) {
+        options.keepAliveInitialDelay = parsed;
+      }
+    }
+
+    const connectionLimit = url.searchParams.get("connectionLimit");
+    if (connectionLimit) {
+      const parsed = Number(connectionLimit);
+      if (!Number.isNaN(parsed) && parsed > 0) {
+        options.connectionLimit = parsed;
+      }
+    }
+
+    const queueLimit = url.searchParams.get("queueLimit");
+    if (queueLimit) {
+      const parsed = Number(queueLimit);
+      if (!Number.isNaN(parsed) && parsed >= 0) {
+        options.queueLimit = parsed;
+      }
+    }
+
+    const ssl = url.searchParams.get("ssl");
+    if (ssl) {
+      const normalized = ssl.trim().toLowerCase();
+      if (normalized === "true") {
+        options.ssl = {};
+      } else if (normalized === "skip-verify") {
+        options.ssl = { rejectUnauthorized: false };
+      } else if (normalized === "false") {
+        options.ssl = undefined;
+      } else {
+        options.ssl = normalized;
+      }
+    }
+
+    return options;
+  } catch (error) {
+    logDb("warn", "Não foi possível interpretar DATABASE_URL; usando uri direta", error);
+    return connectionString;
+  }
+}
+
+async function createMysqlPool(connectionString: string): Promise<MysqlPool> {
+  const options = buildPoolOptions(connectionString);
+  const newPool = typeof options === "string" ? mysql.createPool(options) : mysql.createPool(options);
+  try {
+    const connection = await newPool.getConnection();
+    await connection.ping();
+    connection.release();
+    return newPool;
+  } catch (error) {
+    await newPool.end().catch(() => undefined);
+    throw error;
+  }
+}
+
+function getCallbackPool(promPool: MysqlPool): (CallbackPool & Record<string | symbol, unknown>) | null {
+  const underlying = (promPool as unknown as { pool?: CallbackPool }).pool;
+  if (!underlying) return null;
+  return underlying as CallbackPool & Record<string | symbol, unknown>;
+}
+
+function attachPoolErrorHandler(promPool: MysqlPool) {
+  const callbackPool = getCallbackPool(promPool);
+  if (!callbackPool) return;
+  if ((callbackPool as Record<string | symbol, unknown>)[POOL_ERROR_HANDLER_ATTACHED]) {
+    return;
+  }
+
+  (callbackPool as Record<string | symbol, unknown>)[POOL_ERROR_HANDLER_ATTACHED] = true;
+
+  callbackPool.on("error", (error) => {
+    if (isConnectionError(error)) {
+      logDb("warn", "Pool reportou erro de conexão; agendando reset", error);
+      void resetPool(error);
+    } else {
+      logDb("error", "Pool reportou erro inesperado", error);
+    }
+  });
+}
+
+function getErrorCode(error: unknown): string | undefined {
+  if (!error || typeof error !== "object") return undefined;
+  const anyError = error as { code?: unknown; errno?: unknown };
+  if (typeof anyError.code === "string") {
+    return anyError.code;
+  }
+  if (typeof anyError.errno === "number") {
+    return String(anyError.errno);
+  }
+  return undefined;
+}
+
+function isConnectionError(error: unknown): boolean {
+  const code = getErrorCode(error);
+  if (code && CONNECTION_ERROR_CODES.has(code)) {
+    return true;
+  }
+  if (error && typeof error === "object" && "message" in error) {
+    const message = String((error as { message?: unknown }).message ?? "").toLowerCase();
+    if (message.includes("connection lost") || message.includes("econnreset") || message.includes("server has gone away")) {
+      return true;
+    }
+  }
+  return false;
+}
+
+async function resetPool(reason?: unknown) {
+  if (poolResetPromise) {
+    return poolResetPromise;
+  }
+
+  poolResetPromise = (async () => {
+    const logArgs = reason !== undefined ? [reason] : [];
+    logDb("warn", "Resetando pool de conexões com o banco", ...logArgs);
+    const currentPool = pool;
+    pool = null;
+    _db = null;
+    lastPoolValidation = 0;
+
+    if (currentPool) {
+      try {
+        await currentPool.end();
+      } catch (error) {
+        logDb("error", "Falha ao encerrar pool existente", error);
+      }
+    }
+  })();
+
+  try {
+    await poolResetPromise;
+  } finally {
+    poolResetPromise = null;
+  }
+}
+
+async function validateExistingPool() {
+  if (!pool) return;
+
+  const now = Date.now();
+  if (now - lastPoolValidation < DB_POOL_VALIDATION_INTERVAL_MS) {
+    return;
+  }
+
+  try {
+    await pool.query(DB_POOL_HEALTHCHECK_QUERY);
+    lastPoolValidation = now;
+  } catch (error) {
+    if (isConnectionError(error)) {
+      logDb("warn", "Healthcheck do pool falhou; resetando", error);
+      await resetPool(error);
+    } else {
+      throw error;
+    }
+  }
 }
 
 function toDateOnlyString(date: Date): string {
@@ -163,7 +399,20 @@ function formatDateLongPtBR(value: Date | string): string {
 
 // Lazily create the drizzle instance so local tooling can run without a DB.
 export async function getDb() {
-  if (_db) return _db;
+  if (_db) {
+    try {
+      await validateExistingPool();
+      if (_db) {
+        return _db;
+      }
+    } catch (error) {
+      if (isConnectionError(error)) {
+        await resetPool(error);
+      } else {
+        throw error;
+      }
+    }
+  }
 
   if (connectPromise) {
     return connectPromise;
@@ -177,13 +426,15 @@ export async function getDb() {
     }
 
     for (let attempt = 1; attempt <= DB_CONNECT_MAX_RETRIES; attempt++) {
-      let nextPool: ReturnType<typeof mysql.createPool> | null = null;
+      let nextPool: MysqlPool | null = null;
       try {
-        nextPool = mysql.createPool(connectionString);
-        const connection = await nextPool.getConnection();
-        connection.release();
+        if (!nextPool) {
+          nextPool = await createMysqlPool(connectionString);
+          attachPoolErrorHandler(nextPool);
+        }
 
         pool = nextPool;
+        await validateExistingPool();
         _db = drizzle(nextPool as any) as ReturnType<typeof drizzle>;
         logDb("info", `Database connection established (attempt ${attempt})`);
         connectPromise = null;
