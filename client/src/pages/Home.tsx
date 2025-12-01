@@ -35,7 +35,7 @@ export default function Home() {
             </CardHeader>
             <CardContent className="space-y-4">
               <p className="text-sm text-muted-foreground text-center">
-                Gerencie a produção, facilidade. Importe produtos, registre a produção diária e acompanhe relatórios em tempo real.
+                Gerencie a produção com facilidade. Importe produtos, registre a produção diária e acompanhe relatórios em tempo real.
               </p>
               <Button
                 onClick={() => {
