@@ -1,0 +1,1 @@
+ALTER TABLE `products` MODIFY COLUMN `diametro_mm` decimal(10,3);

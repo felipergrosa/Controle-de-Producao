@@ -92,7 +92,12 @@ export default function ProductsQuery() {
   };
 
   const handleEdit = (product: any) => {
-    setEditingProduct({ ...product });
+    // Converter pesoUnitarioG de gramas para kg para exibição na tela
+    const pesoKg = product.pesoUnitarioG ? String(Number(product.pesoUnitarioG) / 1000) : "";
+    setEditingProduct({ 
+      ...product,
+      pesoUnitarioG: pesoKg
+    });
     setShowEditModal(true);
   };
 
@@ -101,11 +106,80 @@ export default function ProductsQuery() {
       toast.error("Código e Descrição são obrigatórios");
       return;
     }
+    // Converter peso em kg de volta para gramas antes de salvar no banco
+    const pesoG = editingProduct.pesoUnitarioG ? String(Number(editingProduct.pesoUnitarioG) * 1000) : null;
+
     await updateProductMutation2.mutateAsync({
       code: editingProduct.code,
       description: editingProduct.description.toUpperCase(),
       photoUrl: editingProduct.photoUrl,
       barcode: editingProduct.barcode?.trim() || null,
+      pesoUnitarioG: pesoG,
+      diametroMm: editingProduct.diametroMm || null,
+      espessuraMm: editingProduct.espessuraMm || null,
+      idealPecasHora: editingProduct.idealPecasHora ? Number(editingProduct.idealPecasHora) : null,
+      metaQuebraPct: editingProduct.metaQuebraPct || null,
+    });
+  };
+
+  const toDisplay = (val: string | number | null | undefined) => {
+    if (val === undefined || val === null) return "";
+    return String(val).replace(".", ",");
+  };
+
+  const handleDiametroChange = (val: string) => {
+    const cleanVal = val.replace(/[^0-9.,]/g, "");
+    const decimalVal = cleanVal.replace(",", ".");
+    const parts = decimalVal.split(".");
+    const formattedVal = parts[0] + (parts.length > 1 ? "." + parts[1] : "");
+
+    const d = Number(formattedVal) || 0;
+    const esp = editingProduct?.espessuraMm || "0";
+    const eNum = Number(esp) || 0;
+    const calculatedPeso = (d > 0 && eNum > 0) ? (d * d * eNum * 2.14).toFixed(4) : "";
+
+    setEditingProduct({ 
+      ...editingProduct, 
+      diametroMm: formattedVal, 
+      pesoUnitarioG: calculatedPeso 
+    });
+  };
+
+  const handleEspessuraChange = (val: string) => {
+    const cleanVal = val.replace(/[^0-9.,]/g, "");
+    const decimalVal = cleanVal.replace(",", ".");
+    const parts = decimalVal.split(".");
+    const formattedVal = parts[0] + (parts.length > 1 ? "." + parts[1] : "");
+
+    const eNum = Number(formattedVal) || 0;
+    const diam = editingProduct?.diametroMm || "0";
+    const d = Number(diam) || 0;
+    const calculatedPeso = (d > 0 && eNum > 0) ? (d * d * eNum * 2.14).toFixed(4) : "";
+
+    setEditingProduct({ 
+      ...editingProduct, 
+      espessuraMm: formattedVal, 
+      pesoUnitarioG: calculatedPeso 
+    });
+  };
+
+  const handleIdealPHChange = (val: string) => {
+    const cleanVal = val.replace(/[^0-9]/g, "");
+    setEditingProduct({ 
+      ...editingProduct, 
+      idealPecasHora: cleanVal ? Number(cleanVal) : ""
+    });
+  };
+
+  const handleMetaQuebraChange = (val: string) => {
+    const cleanVal = val.replace(/[^0-9.,]/g, "");
+    const decimalVal = cleanVal.replace(",", ".");
+    const parts = decimalVal.split(".");
+    const formattedVal = parts[0] + (parts.length > 1 ? "." + parts[1] : "");
+
+    setEditingProduct({ 
+      ...editingProduct, 
+      metaQuebraPct: formattedVal 
     });
   };
 
@@ -251,11 +325,26 @@ export default function ProductsQuery() {
                 ?
               </div>
             )}
-            <div className="text-sm text-muted-foreground w-full">
+            <div className="text-sm text-muted-foreground w-full space-y-1">
               <p><strong>Código:</strong> {selectedProduct?.code}</p>
               <p><strong>Descrição:</strong> {selectedProduct?.description}</p>
               {selectedProduct?.barcode && (
                 <p><strong>Código de Barras:</strong> {selectedProduct.barcode}</p>
+              )}
+              {selectedProduct?.pesoUnitarioG && (
+                <p><strong>Peso Unitário:</strong> {Number(Number(selectedProduct.pesoUnitarioG) / 1000).toLocaleString('pt-BR', { minimumFractionDigits: 4, maximumFractionDigits: 4 })} kg</p>
+              )}
+              {selectedProduct?.diametroMm && (
+                <p><strong>Diâmetro do Disco:</strong> {Number(selectedProduct.diametroMm).toLocaleString('pt-BR', { minimumFractionDigits: 3, maximumFractionDigits: 3 })} m</p>
+              )}
+              {selectedProduct?.espessuraMm && (
+                <p><strong>Espessura da Chapa:</strong> {Number(selectedProduct.espessuraMm).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} mm</p>
+              )}
+              {selectedProduct?.idealPecasHora && (
+                <p><strong>Ideal Peças/Hora:</strong> {selectedProduct.idealPecasHora} p/h</p>
+              )}
+              {selectedProduct?.metaQuebraPct && (
+                <p><strong>Meta Máxima de Quebra:</strong> {Number(selectedProduct.metaQuebraPct).toLocaleString('pt-BR')}%</p>
               )}
             </div>
           </div>
@@ -305,8 +394,68 @@ export default function ProductsQuery() {
                 }
               />
             </div>
+            
+            <div className="grid grid-cols-2 gap-4 border-t pt-4 mt-2">
+              <div className="col-span-2 text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                Dados Físicos & Metas (Repuxo)
+              </div>
+              
+              {/* Peso Unitário apenas exibido no topo (sem campo de input) */}
+              <div className="col-span-2 bg-indigo-50/50 border border-indigo-100/80 p-3 rounded-md flex justify-between items-center mb-1">
+                <span className="text-xs font-bold uppercase tracking-wider text-indigo-700">Peso Unitário</span>
+                <span className="text-lg font-mono font-bold text-indigo-600">
+                  {editingProduct?.pesoUnitarioG && !isNaN(Number(editingProduct.pesoUnitarioG)) 
+                    ? `${Number(editingProduct.pesoUnitarioG).toLocaleString('pt-BR', { minimumFractionDigits: 4, maximumFractionDigits: 4 })} kg` 
+                    : "0,0000 kg"}
+                </span>
+              </div>
+
+              {/* Diâmetro e Espessura na mesma linha */}
+              <div>
+                <label className="text-sm font-medium">Diâmetro do Disco (m)</label>
+                <Input
+                  type="text"
+                  inputMode="decimal"
+                  placeholder="ex: 0,220"
+                  value={toDisplay(editingProduct?.diametroMm)}
+                  onChange={(e) => handleDiametroChange(e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="text-sm font-medium">Espessura da Chapa (mm)</label>
+                <Input
+                  type="text"
+                  inputMode="decimal"
+                  placeholder="ex: 1,10"
+                  value={toDisplay(editingProduct?.espessuraMm)}
+                  onChange={(e) => handleEspessuraChange(e.target.value)}
+                />
+              </div>
+
+              {/* Ideal P/H e Meta Quebra na mesma linha de baixo */}
+              <div>
+                <label className="text-sm font-medium">Ideal P/H (Peças/Hora)</label>
+                <Input
+                  type="text"
+                  inputMode="numeric"
+                  placeholder="ex: 80"
+                  value={editingProduct?.idealPecasHora || ""}
+                  onChange={(e) => handleIdealPHChange(e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="text-sm font-medium">Meta de Quebra (%)</label>
+                <Input
+                  type="text"
+                  inputMode="decimal"
+                  placeholder="ex: 2,50"
+                  value={toDisplay(editingProduct?.metaQuebraPct)}
+                  onChange={(e) => handleMetaQuebraChange(e.target.value)}
+                />
+              </div>
+            </div>
           </div>
-          <div className="flex gap-2 justify-end">
+          <div className="flex gap-2 justify-end pt-4 border-t">
             <Button variant="outline" onClick={() => setShowEditModal(false)}>
               Cancelar
             </Button>

@@ -15,7 +15,7 @@ services:
     volumes:
       - .:/app
       - /app/node_modules
-    command: sh -c "pnpm install --no-frozen-lockfile && pnpm dev"
+    command: sh -c "pnpm install --no-frozen-lockfile --force && pnpm dev"
     depends_on:
       backend:
         condition: service_healthy

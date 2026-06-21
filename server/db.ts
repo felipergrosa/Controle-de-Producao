@@ -590,7 +590,17 @@ export async function getAllProducts(): Promise<Product[]> {
   return await db.select().from(products);
 }
 
-export async function createOrUpdateProduct(code: string, description: string, photoUrl?: string, barcode?: string): Promise<Product> {
+export async function createOrUpdateProduct(
+  code: string,
+  description: string,
+  photoUrl?: string | null,
+  barcode?: string | null,
+  pesoUnitarioG?: string | null,
+  diametroMm?: string | null,
+  espessuraMm?: string | null,
+  idealPecasHora?: number | null,
+  metaQuebraPct?: string | null
+): Promise<Product> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   
@@ -598,9 +608,30 @@ export async function createOrUpdateProduct(code: string, description: string, p
   if (existing) {
     const now = new Date();
     await db.update(products)
-      .set({ description, photoUrl, barcode, updatedAt: now })
+      .set({ 
+        description, 
+        photoUrl, 
+        barcode, 
+        pesoUnitarioG: pesoUnitarioG !== undefined ? pesoUnitarioG : existing.pesoUnitarioG,
+        diametroMm: diametroMm !== undefined ? diametroMm : existing.diametroMm,
+        espessuraMm: espessuraMm !== undefined ? espessuraMm : existing.espessuraMm,
+        idealPecasHora: idealPecasHora !== undefined ? idealPecasHora : existing.idealPecasHora,
+        metaQuebraPct: metaQuebraPct !== undefined ? metaQuebraPct : existing.metaQuebraPct,
+        updatedAt: now 
+      })
       .where(eq(products.code, code));
-    return { ...existing, description, photoUrl: photoUrl ?? existing.photoUrl, barcode: barcode ?? existing.barcode, updatedAt: now };
+    return { 
+      ...existing, 
+      description, 
+      photoUrl: photoUrl ?? existing.photoUrl, 
+      barcode: barcode ?? existing.barcode, 
+      pesoUnitarioG: pesoUnitarioG !== undefined ? pesoUnitarioG : existing.pesoUnitarioG,
+      diametroMm: diametroMm !== undefined ? diametroMm : existing.diametroMm,
+      espessuraMm: espessuraMm !== undefined ? espessuraMm : existing.espessuraMm,
+      idealPecasHora: idealPecasHora !== undefined ? idealPecasHora : existing.idealPecasHora,
+      metaQuebraPct: metaQuebraPct !== undefined ? metaQuebraPct : existing.metaQuebraPct,
+      updatedAt: now 
+    };
   }
   
   const id = crypto.randomUUID();
@@ -613,10 +644,30 @@ export async function createOrUpdateProduct(code: string, description: string, p
     barcode: barcode ?? null,
     totalProduced: 0,
     lastProducedAt: undefined,
+    pesoUnitarioG: pesoUnitarioG ?? null,
+    diametroMm: diametroMm ?? null,
+    espessuraMm: espessuraMm ?? null,
+    idealPecasHora: idealPecasHora ?? null,
+    metaQuebraPct: metaQuebraPct ?? null,
     createdAt: now,
     updatedAt: now,
   });
-  return { id, code, description, photoUrl: photoUrl ?? null, barcode: barcode ?? null, totalProduced: 0, lastProducedAt: null, createdAt: now, updatedAt: now };
+  return { 
+    id, 
+    code, 
+    description, 
+    photoUrl: photoUrl ?? null, 
+    barcode: barcode ?? null, 
+    totalProduced: 0, 
+    lastProducedAt: null, 
+    pesoUnitarioG: pesoUnitarioG ?? null,
+    diametroMm: diametroMm ?? null,
+    espessuraMm: espessuraMm ?? null,
+    idealPecasHora: idealPecasHora ?? null,
+    metaQuebraPct: metaQuebraPct ?? null,
+    createdAt: now, 
+    updatedAt: now 
+  };
 }
 
 // Production entries queries
@@ -773,7 +824,16 @@ export async function deleteProduct(productId: string): Promise<void> {
 
 export async function updateProductByCode(
   code: string,
-  updates: { description?: string; photoUrl?: string; barcode?: string }
+  updates: { 
+    description?: string; 
+    photoUrl?: string | null; 
+    barcode?: string | null;
+    pesoUnitarioG?: string | null;
+    diametroMm?: string | null;
+    espessuraMm?: string | null;
+    idealPecasHora?: number | null;
+    metaQuebraPct?: string | null;
+  }
 ): Promise<Product | undefined> {
   const db = await getDb();
   if (!db) return undefined;

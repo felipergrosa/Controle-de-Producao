@@ -59,6 +59,24 @@ import {
   SESSION_MAX_AGE_MS,
 } from "./auth";
 import { products, productionEntries, productionDaySnapshots, InsertProductionEntry, InsertProductionDaySnapshot } from "../drizzle/schema";
+import {
+  getAllRepuxadores,
+  createRepuxador,
+  updateRepuxador,
+  deleteRepuxador,
+  getAllCausasQuebra,
+  createCausaQuebra,
+  updateCausaQuebra,
+  deleteCausaQuebra,
+  createProducaoRepuxado,
+  getProducaoRepuxados,
+  deleteProducaoRepuxado,
+  getDashboardStats,
+  getMetasRepuxoList,
+  createMetaRepuxo,
+  deleteMetaRepuxo,
+  getMotivosParadaFrequentes,
+} from "./db-repuxados";
 
 
 import { eq } from "drizzle-orm";
@@ -378,14 +396,29 @@ export const appRouter = router({
         z.object({
           code: z.string().min(1),
           description: z.string().min(1),
-          photoUrl: z.string().optional(),
-          barcode: z.string().optional(),
+          photoUrl: z.string().nullable().optional(),
+          barcode: z.string().nullable().optional(),
+          pesoUnitarioG: z.string().nullable().optional(),
+          diametroMm: z.string().nullable().optional(),
+          espessuraMm: z.string().nullable().optional(),
+          idealPecasHora: z.number().nullable().optional(),
+          metaQuebraPct: z.string().nullable().optional(),
         })
       )
       .mutation(async ({ input, ctx }) => {
         const code = input.code.toUpperCase();
         const description = input.description.toUpperCase();
-        return await createOrUpdateProduct(code, description, input.photoUrl, input.barcode);
+        return await createOrUpdateProduct(
+          code, 
+          description, 
+          input.photoUrl, 
+          input.barcode,
+          input.pesoUnitarioG,
+          input.diametroMm,
+          input.espessuraMm,
+          input.idealPecasHora,
+          input.metaQuebraPct
+        );
       }),
 
     create: protectedProcedure
@@ -393,14 +426,29 @@ export const appRouter = router({
         z.object({
           code: z.string().min(1),
           description: z.string().min(1),
-          photoUrl: z.string().optional(),
-          barcode: z.string().optional(),
+          photoUrl: z.string().nullable().optional(),
+          barcode: z.string().nullable().optional(),
+          pesoUnitarioG: z.string().nullable().optional(),
+          diametroMm: z.string().nullable().optional(),
+          espessuraMm: z.string().nullable().optional(),
+          idealPecasHora: z.number().nullable().optional(),
+          metaQuebraPct: z.string().nullable().optional(),
         })
       )
       .mutation(async ({ input, ctx }) => {
         const code = input.code.toUpperCase();
         const description = input.description.toUpperCase();
-        return await createOrUpdateProduct(code, description, input.photoUrl, input.barcode);
+        return await createOrUpdateProduct(
+          code, 
+          description, 
+          input.photoUrl, 
+          input.barcode,
+          input.pesoUnitarioG,
+          input.diametroMm,
+          input.espessuraMm,
+          input.idealPecasHora,
+          input.metaQuebraPct
+        );
       }),
 
     update: protectedProcedure
@@ -408,8 +456,13 @@ export const appRouter = router({
         z.object({
           code: z.string().min(1),
           description: z.string().min(1).optional(),
-          photoUrl: z.string().optional(),
-          barcode: z.string().optional(),
+          photoUrl: z.string().nullable().optional(),
+          barcode: z.string().nullable().optional(),
+          pesoUnitarioG: z.string().nullable().optional(),
+          diametroMm: z.string().nullable().optional(),
+          espessuraMm: z.string().nullable().optional(),
+          idealPecasHora: z.number().nullable().optional(),
+          metaQuebraPct: z.string().nullable().optional(),
         })
       )
       .mutation(async ({ input, ctx }) => {
@@ -417,6 +470,11 @@ export const appRouter = router({
         if (input.description) updates.description = input.description.toUpperCase();
         if (input.photoUrl !== undefined) updates.photoUrl = input.photoUrl;
         if (input.barcode !== undefined) updates.barcode = input.barcode || null;
+        if (input.pesoUnitarioG !== undefined) updates.pesoUnitarioG = input.pesoUnitarioG;
+        if (input.diametroMm !== undefined) updates.diametroMm = input.diametroMm;
+        if (input.espessuraMm !== undefined) updates.espessuraMm = input.espessuraMm;
+        if (input.idealPecasHora !== undefined) updates.idealPecasHora = input.idealPecasHora;
+        if (input.metaQuebraPct !== undefined) updates.metaQuebraPct = input.metaQuebraPct;
         return await updateProductByCode(input.code, updates);
       }),
 
@@ -884,6 +942,170 @@ export const appRouter = router({
         );
 
         return result;
+      }),
+  }),
+
+  // Repuxadores router
+  repuxadores: router({
+    list: protectedProcedure.query(async () => {
+      return await getAllRepuxadores();
+    }),
+    create: protectedProcedure
+      .input(
+        z.object({
+          nome: z.string().min(1),
+          matricula: z.string().optional(),
+          turnoPadrao: z.string().optional(),
+        })
+      )
+      .mutation(async ({ input }) => {
+        return await createRepuxador(input.nome, input.matricula, input.turnoPadrao);
+      }),
+    update: protectedProcedure
+      .input(
+        z.object({
+          id: z.number(),
+          nome: z.string().optional(),
+          matricula: z.string().optional(),
+          turnoPadrao: z.string().optional(),
+          ativo: z.boolean().optional(),
+        })
+      )
+      .mutation(async ({ input }) => {
+        return await updateRepuxador(input.id, input);
+      }),
+    delete: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => {
+        await deleteRepuxador(input.id);
+        return { success: true };
+      }),
+  }),
+
+  // Causas de Quebra router
+  causasQuebra: router({
+    list: protectedProcedure.query(async () => {
+      return await getAllCausasQuebra();
+    }),
+    create: protectedProcedure
+      .input(z.object({ descricao: z.string().min(1) }))
+      .mutation(async ({ input }) => {
+        return await createCausaQuebra(input.descricao);
+      }),
+    update: protectedProcedure
+      .input(
+        z.object({
+          id: z.number(),
+          descricao: z.string().optional(),
+          ativo: z.boolean().optional(),
+        })
+      )
+      .mutation(async ({ input }) => {
+        return await updateCausaQuebra(input.id, input);
+      }),
+    delete: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => {
+        await deleteCausaQuebra(input.id);
+        return { success: true };
+      }),
+  }),
+
+  // Produção de Repuxados router
+  repuxados: router({
+    getByDateRange: protectedProcedure
+      .input(
+        z.object({
+          startDate: z.date(),
+          endDate: z.date(),
+        })
+      )
+      .query(async ({ input }) => {
+        return await getProducaoRepuxados(input.startDate, input.endDate);
+      }),
+    getMotivosParadaFrequentes: protectedProcedure
+      .query(async () => {
+        return await getMotivosParadaFrequentes();
+      }),
+    create: protectedProcedure
+      .input(
+        z.object({
+          productId: z.string(),
+          repuxadorId: z.number(),
+          dataProducao: z.date(),
+          turno: z.string(),
+          horaInicio: z.string(),
+          horaFim: z.string(),
+          pecasProduzidas: z.number().int().nonnegative(),
+          pecasQuebradas: z.number().int().nonnegative().optional(),
+          causaQuebraId: z.number().optional(),
+          obs: z.string().optional(),
+          paradas: z
+            .array(
+              z.object({
+                tempoMinutos: z.number().int().positive(),
+                motivo: z.string().optional(),
+                causaQuebraId: z.number().optional(),
+              })
+            )
+            .optional(),
+        })
+      )
+      .mutation(async ({ input, ctx }) => {
+        return await createProducaoRepuxado({
+          ...input,
+          createdBy: ctx.user?.id,
+        });
+      }),
+    delete: protectedProcedure
+      .input(z.object({ id: z.string() }))
+      .mutation(async ({ input }) => {
+        await deleteProducaoRepuxado(input.id);
+        return { success: true };
+      }),
+    getStats: protectedProcedure
+      .input(
+        z.object({
+          startDate: z.date(),
+          endDate: z.date(),
+        })
+      )
+      .query(async ({ input }) => {
+        return await getDashboardStats(input.startDate, input.endDate);
+      }),
+  }),
+
+  // Metas de Repuxo router
+  metasRepuxo: router({
+    list: protectedProcedure.query(async () => {
+      return await getMetasRepuxoList();
+    }),
+    create: protectedProcedure
+      .input(
+        z.object({
+          tipo: z.string(),
+          referenciaId: z.string().nullable().optional(),
+          metaKgDia: z.number().positive(),
+          metaQuebraPct: z.number().nonnegative(),
+          vigenciaInicio: z.date(),
+          vigenciaFim: z.date().nullable().optional(),
+        })
+      )
+      .mutation(async ({ input }) => {
+        return await createMetaRepuxo({
+          tipo: input.tipo,
+          referenciaId: input.referenciaId || null,
+          metaKgDia: String(input.metaKgDia) as any,
+          metaQuebraPct: String(input.metaQuebraPct) as any,
+          vigenciaInicio: input.vigenciaInicio,
+          vigenciaFim: input.vigenciaFim || null,
+        });
+      }),
+    delete: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => {
+        await deleteMetaRepuxo(input.id);
+        return { success: true };
       }),
   }),
 });

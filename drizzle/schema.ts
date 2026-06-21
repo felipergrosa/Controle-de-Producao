@@ -1,4 +1,4 @@
-import { int, mysqlEnum, mysqlTable, text, timestamp, varchar, boolean, json, date, uniqueIndex } from "drizzle-orm/mysql-core";
+import { int, mysqlEnum, mysqlTable, text, timestamp, varchar, boolean, json, date, uniqueIndex, decimal, index } from "drizzle-orm/mysql-core";
 import { sql } from "drizzle-orm";
 
 /**
@@ -65,7 +65,7 @@ export const auditLogs = mysqlTable(
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => ([
-    uniqueIndex("idx_audit_created").on(table.createdAt),
+    index("idx_audit_created").on(table.createdAt),
   ])
 );
 
@@ -85,6 +85,11 @@ export const products = mysqlTable(
     barcode: varchar("barcode", { length: 100 }),
     totalProduced: int("total_produced").default(0).notNull(),
     lastProducedAt: timestamp("last_produced_at"),
+    pesoUnitarioG: decimal("peso_unitario_g", { precision: 10, scale: 3 }),
+    diametroMm: decimal("diametro_mm", { precision: 10, scale: 3 }),
+    espessuraMm: decimal("espessura_mm", { precision: 10, scale: 2 }),
+    idealPecasHora: int("ideal_pecas_hora"),
+    metaQuebraPct: decimal("meta_quebra_pct", { precision: 5, scale: 2 }),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
   },
@@ -163,9 +168,104 @@ export const productHistory = mysqlTable(
     createdBy: int("created_by"), // Consistência: referência a users.id
   },
   (table) => ([
-    uniqueIndex("idx_history_product").on(table.productId, table.createdAt),
+    index("idx_history_product").on(table.productId, table.createdAt),
   ])
 );
 
 export type ProductHistory = typeof productHistory.$inferSelect;
 export type InsertProductHistory = typeof productHistory.$inferInsert;
+
+/**
+ * Repuxadores - Operadores da máquina de repuxo
+ */
+export const repuxadores = mysqlTable("repuxadores", {
+  id: int("id").autoincrement().primaryKey(),
+  nome: varchar("nome", { length: 255 }).notNull(),
+  matricula: varchar("matricula", { length: 50 }),
+  turnoPadrao: varchar("turno_padrao", { length: 20 }),
+  ativo: boolean("ativo").default(true).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export type Repuxador = typeof repuxadores.$inferSelect;
+export type InsertRepuxador = typeof repuxadores.$inferInsert;
+
+/**
+ * Causas de quebra - Motivos padronizados de quebra
+ */
+export const causasQuebra = mysqlTable("causas_quebra", {
+  id: int("id").autoincrement().primaryKey(),
+  descricao: varchar("descricao", { length: 255 }).notNull(),
+  ativo: boolean("ativo").default(true).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export type CausaQuebra = typeof causasQuebra.$inferSelect;
+export type InsertCausaQuebra = typeof causasQuebra.$inferInsert;
+
+/**
+ * Lançamento de produção de repuxados
+ */
+export const producaoRepuxados = mysqlTable("producao_repuxados", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`(UUID())`),
+  productId: varchar("product_id", { length: 36 }).notNull(),
+  repuxadorId: int("repuxador_id").notNull(),
+  dataProducao: date("data_producao").notNull(),
+  turno: varchar("turno", { length: 20 }).notNull(),
+  horaInicio: varchar("hora_inicio", { length: 8 }).notNull(), // formato HH:MM:SS ou HH:MM
+  horaFim: varchar("hora_fim", { length: 8 }).notNull(),
+  pecasProduzidas: int("pecas_produzidas").notNull(),
+  pecasQuebradas: int("pecas_quebradas").default(0).notNull(),
+  causaQuebraId: int("causa_quebra_id"),
+  obs: text("obs"),
+  createdBy: int("created_by"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
+});
+
+export type ProducaoRepuxado = typeof producaoRepuxados.$inferSelect;
+export type InsertProducaoRepuxado = typeof producaoRepuxados.$inferInsert;
+
+/**
+ * Paradas de máquina associadas aos repuxados
+ */
+export const paradasMaquina = mysqlTable("paradas_maquina", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`(UUID())`),
+  producaoRepuxadosId: varchar("producao_repuxados_id", { length: 36 }).notNull(),
+  tempoMinutos: int("tempo_minutos").notNull(),
+  motivo: varchar("motivo", { length: 255 }),
+  causaQuebraId: int("causa_quebra_id"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export type ParadaMaquina = typeof paradasMaquina.$inferSelect;
+export type InsertParadaMaquina = typeof paradasMaquina.$inferInsert;
+
+/**
+ * Metas configuráveis de repuxo
+ */
+export const metasRepuxo = mysqlTable("metas_repuxo", {
+  id: int("id").autoincrement().primaryKey(),
+  tipo: varchar("tipo", { length: 20 }).notNull(), // 'geral', 'repuxador', 'produto'
+  referenciaId: varchar("referencia_id", { length: 36 }), // id do produto ou repuxador
+  metaKgDia: decimal("meta_kg_dia", { precision: 10, scale: 2 }).notNull(),
+  metaQuebraPct: decimal("meta_quebra_pct", { precision: 5, scale: 2 }).notNull(),
+  vigenciaInicio: date("vigencia_inicio").notNull(),
+  vigenciaFim: date("vigencia_fim"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export type MetaRepuxo = typeof metasRepuxo.$inferSelect;
+export type InsertMetaRepuxo = typeof metasRepuxo.$inferInsert;
+
+/**
+ * Tabela interna de controle de migrações
+ */
+export const migrationsTable = mysqlTable("_migrations", {
+  id: int("id").autoincrement().primaryKey(),
+  version: int("version").notNull().unique(),
+  filename: varchar("filename", { length: 255 }).notNull(),
+  executedAt: timestamp("executed_at").defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("idx_version").on(table.version),
+]);

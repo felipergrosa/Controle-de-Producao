@@ -13,6 +13,8 @@ import ProductsQuery from "./pages/ProductsQuery";
 import AuditLogs from "./pages/AuditLogs";
 import Login from "./pages/Login";
 import Users from "./pages/Users";
+import LancamentoRepuxados from "./pages/LancamentoRepuxados";
+import DashboardRepuxo from "./pages/DashboardRepuxo";
 
 function Router() {
   return (
@@ -51,6 +53,20 @@ function Router() {
         {() => (
           <DashboardLayout>
             <ProductsQuery />
+          </DashboardLayout>
+        )}
+      </Route>
+      <Route path={"/repuxo/lancamento"}>
+        {() => (
+          <DashboardLayout>
+            <LancamentoRepuxados />
+          </DashboardLayout>
+        )}
+      </Route>
+      <Route path={"/repuxo/dashboard"}>
+        {() => (
+          <DashboardLayout>
+            <DashboardRepuxo />
           </DashboardLayout>
         )}
       </Route>

@@ -29,6 +29,27 @@
       "when": 1762140673763,
       "tag": "0003_wise_demogoblin",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "5",
+      "when": 1781977190881,
+      "tag": "0004_icy_zemo",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "5",
+      "when": 1781977715967,
+      "tag": "0005_freezing_cobalt_man",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "5",
+      "when": 1782000373384,
+      "tag": "0006_silent_martin_li",
+      "breakpoints": true
     }
   ]
 }
