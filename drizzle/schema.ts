@@ -227,6 +227,19 @@ export type ProducaoRepuxado = typeof producaoRepuxados.$inferSelect;
 export type InsertProducaoRepuxado = typeof producaoRepuxados.$inferInsert;
 
 /**
+ * Motivos de parada de máquina - Diferente de causas de quebra
+ */
+export const motivosParada = mysqlTable("motivos_parada", {
+  id: int("id").autoincrement().primaryKey(),
+  descricao: varchar("descricao", { length: 255 }).notNull(),
+  ativo: boolean("ativo").default(true).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export type MotivoParada = typeof motivosParada.$inferSelect;
+export type InsertMotivoParada = typeof motivosParada.$inferInsert;
+
+/**
  * Paradas de máquina associadas aos repuxados
  */
 export const paradasMaquina = mysqlTable("paradas_maquina", {
@@ -234,6 +247,7 @@ export const paradasMaquina = mysqlTable("paradas_maquina", {
   producaoRepuxadosId: varchar("producao_repuxados_id", { length: 36 }).notNull(),
   tempoMinutos: int("tempo_minutos").notNull(),
   motivo: varchar("motivo", { length: 255 }),
+  motivoParadaId: int("motivo_parada_id"),
   causaQuebraId: int("causa_quebra_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });

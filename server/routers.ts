@@ -68,6 +68,10 @@ import {
   createCausaQuebra,
   updateCausaQuebra,
   deleteCausaQuebra,
+  getAllMotivosParada,
+  createMotivoParada,
+  updateMotivoParada,
+  deleteMotivoParada,
   createProducaoRepuxado,
   getProducaoRepuxados,
   deleteProducaoRepuxado,
@@ -1011,6 +1015,35 @@ export const appRouter = router({
       }),
   }),
 
+  // Motivos de Parada router
+  motivosParada: router({
+    list: protectedProcedure.query(async () => {
+      return await getAllMotivosParada();
+    }),
+    create: protectedProcedure
+      .input(z.object({ descricao: z.string().min(1) }))
+      .mutation(async ({ input }) => {
+        return await createMotivoParada(input.descricao);
+      }),
+    update: protectedProcedure
+      .input(
+        z.object({
+          id: z.number(),
+          descricao: z.string().optional(),
+          ativo: z.boolean().optional(),
+        })
+      )
+      .mutation(async ({ input }) => {
+        return await updateMotivoParada(input.id, input);
+      }),
+    delete: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => {
+        await deleteMotivoParada(input.id);
+        return { success: true };
+      }),
+  }),
+
   // Produção de Repuxados router
   repuxados: router({
     getByDateRange: protectedProcedure
@@ -1045,6 +1078,7 @@ export const appRouter = router({
               z.object({
                 tempoMinutos: z.number().int().positive(),
                 motivo: z.string().optional(),
+                motivoParadaId: z.number().optional(),
                 causaQuebraId: z.number().optional(),
               })
             )

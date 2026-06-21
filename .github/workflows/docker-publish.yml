@@ -108,6 +108,10 @@ jobs:
             
             # Pull da imagem mais recente
             docker pull ${DOCKERHUB_USERNAME}/controle-producao:latest
+
+            # Obter o container antigo rodando antes de aplicar o update
+            PREVIOUS_CONTAINER_ID=$(docker ps --filter "name=controle-de-producao_frontend" -q | head -n1)
+            echo "Container antigo do app: $PREVIOUS_CONTAINER_ID"
             
             # Deploy via Swarm stack (forçar update da imagem)
             docker stack deploy -c docker-compose.swarm.yml controle-de-producao --with-registry-auth
@@ -137,23 +141,23 @@ jobs:
               exit 1
             fi
 
-            # Aguardar container principal iniciar
-            echo "Aguardando container do app ficar disponível..."
-            for i in $(seq 1 15); do
+            # Aguardar container principal iniciar (garantindo que seja o NOVO container)
+            echo "Aguardando novo container do app ficar disponível..."
+            for i in $(seq 1 30); do
               CONTAINER_ID=$(docker ps --filter "name=controle-de-producao_frontend" -q | head -n1)
-              if [ -n "$CONTAINER_ID" ]; then
-                # Verificar se container está realmente pronto
+              if [ -n "$CONTAINER_ID" ] && [ "$CONTAINER_ID" != "$PREVIOUS_CONTAINER_ID" ]; then
+                # Verificar se container está realmente pronto e tem o migrate.js
                 if docker exec "$CONTAINER_ID" test -f /app/dist/migrate.js; then
-                  echo "Container pronto!"
+                  echo "Novo container pronto ($CONTAINER_ID)!"
                   break
                 fi
               fi
-              echo "Tentativa $i/15: aguardando container ficar pronto..."
+              echo "Tentativa $i/30: aguardando novo container ficar pronto..."
               sleep 6
             done
 
-            if [ -z "$CONTAINER_ID" ]; then
-              echo "Container do app não encontrado após aguardar. Abortando migrations."
+            if [ -z "$CONTAINER_ID" ] || [ "$CONTAINER_ID" = "$PREVIOUS_CONTAINER_ID" ]; then
+              echo "Novo container do app não foi iniciado ou não pôde ser identificado. Abortando migrations."
               exit 1
             fi
 

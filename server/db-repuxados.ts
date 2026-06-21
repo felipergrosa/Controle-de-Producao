@@ -3,6 +3,7 @@ import { getDb } from "./db";
 import { 
   repuxadores, 
   causasQuebra, 
+  motivosParada,
   producaoRepuxados, 
   paradasMaquina, 
   metasRepuxo,
@@ -11,6 +12,7 @@ import {
   Product,
   Repuxador,
   CausaQuebra,
+  MotivoParada,
   ProducaoRepuxado,
   ParadaMaquina,
   MetaRepuxo
@@ -124,6 +126,54 @@ export async function deleteCausaQuebra(id: number): Promise<void> {
 }
 
 // ==========================================
+// CRUD MOTIVOS DE PARADA
+// ==========================================
+export async function getAllMotivosParada(): Promise<MotivoParada[]> {
+  const db = await getDb();
+  if (!db) return [];
+  return await db.select().from(motivosParada).orderBy(desc(motivosParada.ativo), motivosParada.descricao);
+}
+
+export async function getMotivoParadaById(id: number): Promise<MotivoParada | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(motivosParada).where(eq(motivosParada.id, id)).limit(1);
+  return result.length > 0 ? result[0] : undefined;
+}
+
+export async function createMotivoParada(descricao: string): Promise<MotivoParada> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  const [result] = await db.insert(motivosParada).values({
+    descricao,
+    ativo: true,
+  });
+  
+  const newId = result.insertId;
+  const created = await getMotivoParadaById(newId);
+  if (!created) throw new Error("Erro ao criar motivo de parada");
+  return created;
+}
+
+export async function updateMotivoParada(id: number, updates: Partial<Omit<MotivoParada, "id" | "createdAt">>): Promise<MotivoParada> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  await db.update(motivosParada).set(updates).where(eq(motivosParada.id, id));
+  const updated = await getMotivoParadaById(id);
+  if (!updated) throw new Error("Motivo de parada não encontrado");
+  return updated;
+}
+
+export async function deleteMotivoParada(id: number): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  // Apenas desativa para manter histórico
+  await db.update(motivosParada).set({ ativo: false }).where(eq(motivosParada.id, id));
+}
+
+// ==========================================
 // LANÇAMENTOS DE REPUXO E PARADAS
 // ==========================================
 export interface InsertProducaoRepuxadoInput {
@@ -141,6 +191,7 @@ export interface InsertProducaoRepuxadoInput {
   paradas?: Array<{
     tempoMinutos: number;
     motivo?: string;
+    motivoParadaId?: number;
     causaQuebraId?: number;
   }>;
 }
@@ -177,6 +228,7 @@ export async function createProducaoRepuxado(input: InsertProducaoRepuxadoInput)
             producaoRepuxadosId: id,
             tempoMinutos: p.tempoMinutos,
             motivo: p.motivo || null,
+            motivoParadaId: p.motivoParadaId || null,
             causaQuebraId: p.causaQuebraId || null,
           });
         }
@@ -242,11 +294,12 @@ export async function getProducaoRepuxados(startDate: Date, endDate: Date): Prom
         id: paradasMaquina.id,
         tempoMinutos: paradasMaquina.tempoMinutos,
         motivo: paradasMaquina.motivo,
+        motivoParadaId: paradasMaquina.motivoParadaId,
         causaQuebraId: paradasMaquina.causaQuebraId,
-        causaDescricao: causasQuebra.descricao,
+        causaDescricao: motivosParada.descricao,
       })
       .from(paradasMaquina)
-      .leftJoin(causasQuebra, eq(paradasMaquina.causaQuebraId, causasQuebra.id))
+      .leftJoin(motivosParada, eq(paradasMaquina.motivoParadaId, motivosParada.id))
       .where(eq(paradasMaquina.producaoRepuxadosId, row.id));
 
     result.push({

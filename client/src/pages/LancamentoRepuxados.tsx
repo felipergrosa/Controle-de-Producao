@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -8,6 +8,11 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogD
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Textarea } from "@/components/ui/textarea";
+import { Badge } from "@/components/ui/badge";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import { CameraScannerDialog } from "@/components/CameraScannerDialog";
+import { cn } from "@/lib/utils";
+import { useAuth } from "@/_core/hooks/useAuth";
 import { 
   Plus, 
   Trash2, 
@@ -22,7 +27,13 @@ import {
   TrendingDown,
   Percent,
   X,
-  Keyboard
+  Keyboard,
+  ChevronUp,
+  ChevronDown,
+  ScanLine,
+  Camera,
+  Search,
+  AlertCircle
 } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
@@ -54,155 +65,203 @@ function adjustTime(currentTime: string, type: "hour" | "minute", amount: number
   return `${hStr}:${mStr}`;
 }
 
-function AnalogClock({
+function RetroDigitalClock({
   value,
   onChange,
-  mode,
-  setMode,
+  label,
 }: {
   value: string;
   onChange: (val: string) => void;
-  mode: "hour" | "minute";
-  setMode: (mode: "hour" | "minute") => void;
+  label: string;
 }) {
   const [h, m] = value.split(":").map(Number);
-  const isPm = h >= 12;
-  const displayHour = h % 12 === 0 ? 12 : h % 12;
+  const [touchStartY, setTouchStartY] = useState<number | null>(null);
 
-  const handlePeriodChange = (pm: boolean) => {
-    let newH = h % 12;
-    if (pm) {
-      newH += 12;
+  const incrementHour = (amount: number) => {
+    onChange(adjustTime(value, "hour", amount));
+  };
+
+  const incrementMinute = (amount: number) => {
+    onChange(adjustTime(value, "minute", amount));
+  };
+
+  // Funções de arrasto (Touch / Mobile)
+  const handleTouchStart = (e: React.TouchEvent) => {
+    setTouchStartY(e.touches[0].clientY);
+  };
+
+  const handleTouchMove = (e: React.TouchEvent, type: "hour" | "minute") => {
+    if (touchStartY === null) return;
+    const currentY = e.touches[0].clientY;
+    const diffY = touchStartY - currentY;
+
+    if (Math.abs(diffY) > 20) { // Sensibilidade de 20px
+      const amount = diffY > 0 ? 1 : -1; // Cima -> incrementa (+1), Baixo -> decrementa (-1)
+      if (type === "hour") {
+        incrementHour(amount);
+      } else {
+        incrementMinute(amount * 5); // minutos de 5 em 5 para o drag
+      }
+      setTouchStartY(currentY); // Atualiza ponto de partida para rolagem contínua
     }
-    onChange(`${String(newH).padStart(2, "0")}:${String(m).padStart(2, "0")}`);
   };
 
-  const handleHourSelect = (hour12: number) => {
-    let newH = hour12 % 12;
-    if (isPm) newH += 12;
-    onChange(`${String(newH).padStart(2, "0")}:${String(m).padStart(2, "0")}`);
-    setMode("minute");
+  const handleTouchEnd = () => {
+    setTouchStartY(null);
   };
 
-  const handleMinuteSelect = (minVal: number) => {
-    onChange(`${String(h).padStart(2, "0")}:${String(minVal).padStart(2, "0")}`);
-    setMode("hour");
+  // Funções de arrasto no desktop (Mouse Drag)
+  const [mouseStartY, setMouseStartY] = useState<number | null>(null);
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    setMouseStartY(e.clientY);
   };
 
-  const angle = mode === "hour" ? displayHour * 30 : m * 6;
-  const rad = (angle * Math.PI) / 180;
-  const pointerX = 65 + 42 * Math.sin(rad);
-  const pointerY = 65 - 42 * Math.cos(rad);
+  const handleMouseMove = (e: React.MouseEvent, type: "hour" | "minute") => {
+    if (mouseStartY === null) return;
+    const currentY = e.clientY;
+    const diffY = mouseStartY - currentY;
 
-  const hoursArray = [12, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
-  const minutesArray = [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55];
+    if (Math.abs(diffY) > 20) {
+      const amount = diffY > 0 ? 1 : -1;
+      if (type === "hour") {
+        incrementHour(amount);
+      } else {
+        incrementMinute(amount * 5);
+      }
+      setMouseStartY(currentY);
+    }
+  };
+
+  const handleMouseUpOrLeave = () => {
+    setMouseStartY(null);
+  };
 
   return (
-    <div className="flex flex-col items-center p-2 bg-white rounded-lg border border-slate-200 shadow-xs w-[165px] shrink-0">
-      <div className="flex items-center justify-between w-full mb-1">
-        <button
-          type="button"
-          onClick={() => setMode("hour")}
-          className={`text-xs font-bold px-1 py-0.5 rounded transition-colors ${mode === "hour" ? "bg-indigo-100 text-indigo-700" : "text-slate-500 hover:bg-slate-50"}`}
-        >
-          {String(h).padStart(2, "0")}h
-        </button>
-        <span className="text-slate-300">:</span>
-        <button
-          type="button"
-          onClick={() => setMode("minute")}
-          className={`text-xs font-bold px-1 py-0.5 rounded transition-colors ${mode === "minute" ? "bg-indigo-100 text-indigo-700" : "text-slate-500 hover:bg-slate-50"}`}
-        >
-          {String(m).padStart(2, "0")}m
-        </button>
-
-        <div className="flex bg-slate-100 border rounded p-0.5 text-[8px] font-bold">
+    <div className="flex flex-col items-center p-3 bg-slate-100/80 rounded-xl border border-slate-200/80 shadow-xs w-[165px] select-none text-slate-800">
+      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">{label}</span>
+      
+      <div className="flex items-center gap-2">
+        {/* Bloco de Horas */}
+        <div className="flex flex-col items-center">
           <button
             type="button"
-            onClick={() => handlePeriodChange(false)}
-            className={`px-1 py-0.5 rounded-sm ${!isPm ? "bg-white shadow-xs text-indigo-700 font-bold" : "text-slate-400"}`}
+            onClick={() => incrementHour(1)}
+            className="text-slate-400 hover:text-indigo-600 p-1 transition-colors"
           >
-            AM
+            <ChevronUp size={16} />
           </button>
+          
+          <div
+            onTouchStart={handleTouchStart}
+            onTouchMove={(e) => handleTouchMove(e, "hour")}
+            onTouchEnd={handleTouchEnd}
+            onMouseDown={handleMouseDown}
+            onMouseMove={(e) => handleMouseMove(e, "hour")}
+            onMouseUp={handleMouseUpOrLeave}
+            onMouseLeave={handleMouseUpOrLeave}
+            className="w-14 h-14 bg-white border border-slate-200 rounded-lg flex items-center justify-center text-slate-800 font-mono text-3xl font-extrabold tracking-wider shadow-inner cursor-ns-resize"
+            title="Arraste para cima/baixo para ajustar a hora"
+          >
+            {String(h).padStart(2, "0")}
+          </div>
+
           <button
             type="button"
-            onClick={() => handlePeriodChange(true)}
-            className={`px-1 py-0.5 rounded-sm ${isPm ? "bg-white shadow-xs text-indigo-700 font-bold" : "text-slate-400"}`}
+            onClick={() => incrementHour(-1)}
+            className="text-slate-400 hover:text-indigo-600 p-1 transition-colors"
           >
-            PM
+            <ChevronDown size={16} />
+          </button>
+        </div>
+
+        {/* Separador Piscante */}
+        <div className="text-slate-400 font-mono text-2xl font-bold pb-2 animate-pulse">:</div>
+
+        {/* Bloco de Minutos */}
+        <div className="flex flex-col items-center">
+          <button
+            type="button"
+            onClick={() => incrementMinute(5)}
+            className="text-slate-400 hover:text-indigo-600 p-1 transition-colors"
+          >
+            <ChevronUp size={16} />
+          </button>
+          
+          <div
+            onTouchStart={handleTouchStart}
+            onTouchMove={(e) => handleTouchMove(e, "minute")}
+            onTouchEnd={handleTouchEnd}
+            onMouseDown={handleMouseDown}
+            onMouseMove={(e) => handleMouseMove(e, "minute")}
+            onMouseUp={handleMouseUpOrLeave}
+            onMouseLeave={handleMouseUpOrLeave}
+            className="w-14 h-14 bg-white border border-slate-200 rounded-lg flex items-center justify-center text-slate-800 font-mono text-3xl font-extrabold tracking-wider shadow-inner cursor-ns-resize"
+            title="Arraste para cima/baixo para ajustar os minutos"
+          >
+            {String(m).padStart(2, "0")}
+          </div>
+
+          <button
+            type="button"
+            onClick={() => incrementMinute(-5)}
+            className="text-slate-400 hover:text-indigo-600 p-1 transition-colors"
+          >
+            <ChevronDown size={16} />
           </button>
         </div>
       </div>
-
-      <div className="relative w-[130px] h-[130px] bg-slate-50 rounded-full border border-slate-200 flex items-center justify-center">
-        <svg width="130" height="130" className="select-none">
-          <circle cx="65" cy="65" r="3" fill="#4f46e5" />
-          
-          <line
-            x1="65"
-            y1="65"
-            x2={pointerX}
-            y2={pointerY}
-            stroke="#4f46e5"
-            strokeWidth="2"
-            strokeLinecap="round"
-          />
-          <circle cx={pointerX} cy={pointerY} r="3.5" fill="#4f46e5" />
-
-          {mode === "hour" ? (
-            hoursArray.map((val) => {
-              const theta = (val * 30 * Math.PI) / 180;
-              const x = 65 + 46 * Math.sin(theta);
-              const y = 65 - 46 * Math.cos(theta);
-              const isSelected = displayHour === val;
-              return (
-                <g key={val} className="cursor-pointer" onClick={() => handleHourSelect(val)}>
-                  <circle cx={x} cy={y - 1} r="7" fill={isSelected ? "#4f46e5" : "transparent"} className="hover:fill-slate-200/50" />
-                  <text
-                    x={x}
-                    y={y + 2}
-                    textAnchor="middle"
-                    className={`text-[8px] font-bold ${isSelected ? "fill-white" : "fill-slate-500 hover:fill-indigo-600"}`}
-                  >
-                    {val}
-                  </text>
-                </g>
-              );
-            })
-          ) : (
-            minutesArray.map((val) => {
-              const theta = (val * 6 * Math.PI) / 180;
-              const x = 65 + 46 * Math.sin(theta);
-              const y = 65 - 46 * Math.cos(theta);
-              const isSelected = m === val;
-              return (
-                <g key={val} className="cursor-pointer" onClick={() => handleMinuteSelect(val)}>
-                  <circle cx={x} cy={y - 1} r="7" fill={isSelected ? "#4f46e5" : "transparent"} className="hover:fill-slate-200/50" />
-                  <text
-                    x={x}
-                    y={y + 2}
-                    textAnchor="middle"
-                    className={`text-[8px] font-bold ${isSelected ? "fill-white" : "fill-slate-500 hover:fill-indigo-600"}`}
-                  >
-                    {val}
-                  </text>
-                </g>
-              );
-            })
-          )}
-        </svg>
-      </div>
+      <span className="text-[8px] text-slate-400 mt-1 uppercase font-semibold">Arraste para rolar</span>
     </div>
   );
 }
 
+type SearchMode = "reader" | "camera" | "partial";
+
+const MODE_ORDER: SearchMode[] = ["reader", "camera", "partial"];
+
+const MODE_CONFIG: Record<
+  SearchMode,
+  {
+    label: string;
+    message: string;
+    icon: any;
+    activeClasses: string;
+    messageClasses: string;
+  }
+> = {
+  reader: {
+    label: "Modo leitor",
+    message: "Modo leitor ativo",
+    icon: ScanLine,
+    activeClasses: "bg-red-600 text-white hover:bg-red-700 border-transparent",
+    messageClasses: "bg-red-100 text-red-700 border-red-200",
+  },
+  camera: {
+    label: "Câmera",
+    message: "Modo câmera ativo",
+    icon: Camera,
+    activeClasses: "bg-orange-500 text-white hover:bg-orange-600 border-transparent",
+    messageClasses: "bg-orange-100 text-orange-700 border-orange-200",
+  },
+  partial: {
+    label: "Busca parcial",
+    message: "Modo parcial ativo",
+    icon: Search,
+    activeClasses: "bg-emerald-600 text-white hover:bg-emerald-700 border-transparent",
+    messageClasses: "bg-emerald-100 text-emerald-700 border-emerald-200",
+  },
+};
+
 interface ParadaInput {
   tempoMinutos: number;
   motivo: string;
+  motivoParadaId?: number;
   causaQuebraId?: number;
 }
 
 export default function LancamentoRepuxados() {
+  const { user } = useAuth();
   const today = new Date();
   
   // States do formulário
@@ -221,14 +280,28 @@ export default function LancamentoRepuxados() {
 
   // States extras para o controle de relógio móvel
   const [showManualTime, setShowManualTime] = useState(false);
-  const [clockStartMode, setClockStartMode] = useState<"hour" | "minute">("hour");
-  const [clockEndMode, setClockEndMode] = useState<"hour" | "minute">("hour");
-  const [isCustomParadaMotivo, setIsCustomParadaMotivo] = useState(false);
+  const [causaModalOrigin, setCausaModalOrigin] = useState<"quebra" | "parada">("quebra");
+
+  // States para busca integrada de produtos (mesmo padrão do ProductionEntry)
+  const [activeSearchMode, setActiveSearchMode] = useState<SearchMode | null>(null);
+  const [cameraScannerOpen, setCameraScannerOpen] = useState(false);
+  const [notFoundCode, setNotFoundCode] = useState("");
+  const [showNotFoundModal, setShowNotFoundModal] = useState(false);
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [dateInputValue, setDateInputValue] = useState("");
+  const [mobileModeAccordionOpen, setMobileModeAccordionOpen] = useState(false);
+
+  // Refs para leitor de código de barras físico
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const barcodeBufferRef = useRef("");
+  const barcodeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const lastNonCameraModeRef = useRef<SearchMode | null>("reader");
+  const hasInitializedDefaultReaderMode = useRef(false);
   
   // Paradas associadas
   const [paradas, setParadas] = useState<ParadaInput[]>([]);
   const [tempParadaMin, setTempParadaMin] = useState("");
-  const [tempParadaMotivo, setTempParadaMotivo] = useState("");
   const [tempParadaCausaId, setTempParadaCausaId] = useState("");
 
   // Modais de Cadastro Rápido
@@ -244,6 +317,7 @@ export default function LancamentoRepuxados() {
   const utils = trpc.useUtils();
   const repuxadoresQuery = trpc.repuxadores.list.useQuery();
   const causasQuery = trpc.causasQuebra.list.useQuery();
+  const motivosParadaQuery = trpc.motivosParada.list.useQuery();
   const produtosQuery = trpc.products.list.useQuery();
   const motivosFrequentesQuery = trpc.repuxados.getMotivosParadaFrequentes.useQuery();
   
@@ -289,6 +363,7 @@ export default function LancamentoRepuxados() {
       utils.repuxados.getByDateRange.invalidate();
       utils.repuxados.getStats.invalidate();
       utils.products.list.invalidate();
+      utils.motivosParada.list.invalidate();
       utils.repuxados.getMotivosParadaFrequentes.invalidate();
     },
     onError: (err) => {
@@ -333,6 +408,336 @@ export default function LancamentoRepuxados() {
       toast.error(err.message || "Erro ao cadastrar causa");
     }
   });
+
+  const createMotivoParadaMutation = trpc.motivosParada.create.useMutation({
+    onSuccess: (data) => {
+      toast.success(`Motivo de parada "${data.descricao}" cadastrado!`);
+      setTempParadaCausaId(String(data.id));
+      setShowCausaModal(false);
+      setNewCausaDescricao("");
+      utils.motivosParada.list.invalidate();
+    },
+    onError: (err) => {
+      toast.error(err.message || "Erro ao cadastrar motivo de parada");
+    }
+  });
+
+  // Busca combinada do trpc para o autocomplete e busca exata (mesmo padrão de ProductionEntry)
+  const { data: searchResults = [] } = trpc.products.searchCombined.useQuery(
+    { query: productSearch },
+    { enabled: activeSearchMode === "partial" && productSearch.length >= 2 }
+  );
+
+  // Utilitários de Beep (mesmo de ProductionEntry)
+  const playBeep = useCallback(async () => {
+    if (typeof window === "undefined") return;
+
+    try {
+      const AudioContextClass = window.AudioContext ?? (window as any).webkitAudioContext;
+      if (!AudioContextClass) return;
+
+      if (!audioContextRef.current) {
+        audioContextRef.current = new AudioContextClass();
+      }
+
+      const ctx = audioContextRef.current;
+      if (!ctx) return;
+
+      if (ctx.state === "suspended") {
+        await ctx.resume();
+      }
+
+      const oscillator = ctx.createOscillator();
+      const gainNode = ctx.createGain();
+
+      oscillator.type = "sine";
+      oscillator.frequency.value = 1100;
+
+      const now = ctx.currentTime;
+
+      gainNode.gain.setValueAtTime(0.001, now);
+      gainNode.gain.exponentialRampToValueAtTime(0.15, now + 0.02);
+      gainNode.gain.exponentialRampToValueAtTime(0.001, now + 0.18);
+
+      oscillator.connect(gainNode);
+      gainNode.connect(ctx.destination);
+
+      oscillator.start(now);
+      oscillator.stop(now + 0.2);
+
+      oscillator.onended = () => {
+        oscillator.disconnect();
+        gainNode.disconnect();
+      };
+    } catch (error) {
+      console.error("Erro ao reproduzir beep", error);
+    }
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      const ctx = audioContextRef.current;
+      audioContextRef.current = null;
+      if (ctx?.close) {
+        void ctx.close().catch(() => undefined);
+      }
+    };
+  }, []);
+
+  const findProductByCode = async (query: string) => {
+    const normalized = query.trim().toUpperCase();
+    if (!normalized) return null;
+
+    try {
+      const results = await utils.products.searchCombined.fetch({ query: normalized });
+      const safeResults = Array.isArray(results) ? results : [];
+      return (
+        safeResults.find(
+          (p: any) =>
+            p.code?.toUpperCase() === normalized ||
+            p.barcode?.toUpperCase() === normalized
+        ) ?? null
+      );
+    } catch (error) {
+      console.error("findProductByCode error:", error);
+      return null;
+    }
+  };
+
+  const handleSearch = async () => {
+    if (!productSearch.trim()) return;
+
+    const product = await findProductByCode(productSearch);
+
+    if (product) {
+      setProductId(product.id);
+      setProductSearch("");
+      void playBeep();
+      toast.success(`Produto ${product.code} selecionado`);
+      focusSearchInput();
+    } else {
+      setNotFoundCode(productSearch.trim());
+      setShowNotFoundModal(true);
+    }
+  };
+
+  const selectProductByCode = async (rawCode: string) => {
+    const code = rawCode.trim();
+    if (!code) return;
+
+    const product = await findProductByCode(code);
+    if (!product) {
+      setNotFoundCode(code);
+      setShowNotFoundModal(true);
+      return;
+    }
+
+    setProductId(product.id);
+    setProductSearch("");
+    void playBeep();
+    toast.success(`Produto ${product.code} selecionado`);
+    focusSearchInput();
+  };
+
+  const handleBarcodeScan = async (rawCode: string) => {
+    await selectProductByCode(rawCode);
+  };
+
+  const handleCameraDetected = async (code: string) => {
+    await selectProductByCode(code);
+  };
+
+  const resetBarcodeBuffer = () => {
+    barcodeBufferRef.current = "";
+    if (barcodeTimeoutRef.current) {
+      clearTimeout(barcodeTimeoutRef.current);
+      barcodeTimeoutRef.current = null;
+    }
+  };
+
+  const focusSearchInput = () => {
+    setTimeout(() => searchInputRef.current?.focus(), 100);
+  };
+
+  const handleCloseNotFoundModal = () => {
+    setShowNotFoundModal(false);
+    focusSearchInput();
+  };
+
+  const handleDateSelection = () => {
+    if (!dateInputValue) {
+      toast.error("Selecione uma data");
+      return;
+    }
+    setDataProducao(dateInputValue);
+    setShowDatePicker(false);
+    toast.success(`Data alterada para ${format(new Date(dateInputValue + "T12:00:00"), "dd/MM/yyyy", { locale: ptBR })}`);
+  };
+
+  useEffect(() => {
+    focusSearchInput();
+  }, []);
+
+  useEffect(() => {
+    if (!hasInitializedDefaultReaderMode.current && user) {
+      setActiveSearchMode(user.defaultReaderMode ? "reader" : null);
+      hasInitializedDefaultReaderMode.current = true;
+    }
+  }, [user]);
+
+  useEffect(() => {
+    if (activeSearchMode !== "partial") {
+      setMobileModeAccordionOpen(false);
+    }
+  }, [activeSearchMode]);
+
+  useEffect(() => {
+    if (activeSearchMode !== "reader") {
+      resetBarcodeBuffer();
+      return;
+    }
+
+    const handleKeyDownGlobal = (event: KeyboardEvent) => {
+      const activeElement = document.activeElement;
+      const isTypingField = activeElement instanceof HTMLInputElement || activeElement instanceof HTMLTextAreaElement;
+
+      // Se for um campo de texto que não seja o nosso input de busca, deixa o comportamento normal
+      if (isTypingField && activeElement !== searchInputRef.current && !event.key.startsWith("F")) {
+        event.preventDefault();
+        activeElement.blur();
+      }
+
+      if (event.key === "Enter") {
+        event.preventDefault();
+        const code = barcodeBufferRef.current;
+        resetBarcodeBuffer();
+        if (code) {
+          handleBarcodeScan(code);
+        }
+        return;
+      }
+
+      if (event.key.length === 1 && !event.ctrlKey && !event.altKey && !event.metaKey) {
+        barcodeBufferRef.current += event.key;
+        if (barcodeTimeoutRef.current) {
+          clearTimeout(barcodeTimeoutRef.current);
+        }
+        barcodeTimeoutRef.current = setTimeout(() => {
+          resetBarcodeBuffer();
+        }, 150);
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDownGlobal);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDownGlobal);
+      resetBarcodeBuffer();
+    };
+  }, [activeSearchMode]);
+
+  const activateMode = (mode: SearchMode) => {
+    if (activeSearchMode === mode) {
+      if (mode === "camera") {
+        setCameraScannerOpen(false);
+      }
+      focusSearchInput();
+      toast.info("Voltando para busca por código (padrão).");
+      setActiveSearchMode(null);
+      setMobileModeAccordionOpen(false);
+      return;
+    }
+
+    switch (mode) {
+      case "reader":
+        searchInputRef.current?.blur();
+        toast.info("Modo leitor ativo. Escaneie o código do produto.");
+        break;
+      case "camera":
+        searchInputRef.current?.blur();
+        toast.info("Modo câmera ativo. Aguarde a abertura do scanner.");
+        break;
+      case "partial":
+        focusSearchInput();
+        toast.info("Modo parcial ativo. Digite ao menos 2 caracteres para buscar.");
+        break;
+    }
+
+    if (mode === "camera") {
+      lastNonCameraModeRef.current = activeSearchMode ?? lastNonCameraModeRef.current ?? "reader";
+    } else {
+      lastNonCameraModeRef.current = mode;
+    }
+
+    setActiveSearchMode(mode);
+    setCameraScannerOpen(mode === "camera");
+    setMobileModeAccordionOpen(false);
+  };
+
+  const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (activeSearchMode === "reader") {
+      if (e.key === "Enter") {
+        e.preventDefault();
+      }
+      return;
+    }
+    if (e.key === "Enter") {
+      e.preventDefault();
+      if (activeSearchMode !== "partial") {
+        handleSearch();
+      }
+    }
+  };
+
+  const searchPlaceholder = useMemo(() => {
+    switch (activeSearchMode) {
+      case "reader":
+        return "Aponte o leitor para o código de barras do produto";
+      case "camera":
+        return "Use a câmera para escanear o código do produto";
+      case "partial":
+        return "Digite código ou descrição e selecione o produto";
+      default:
+        return "Digite o código do produto e aperte Enter";
+    }
+  }, [activeSearchMode]);
+
+  const orderedModes = useMemo(() => {
+    if (!activeSearchMode) {
+      return MODE_ORDER;
+    }
+    return [
+      activeSearchMode,
+      ...MODE_ORDER.filter((mode) => mode !== activeSearchMode),
+    ];
+  }, [activeSearchMode]);
+
+  const activeModeConfig = activeSearchMode
+    ? MODE_CONFIG[activeSearchMode]
+    : null;
+
+  const defaultModeLabel = "Busca por código (padrão)";
+
+  const activeModeLabel = activeModeConfig
+    ? activeModeConfig.label
+    : defaultModeLabel;
+
+  const ActiveModeIcon = activeSearchMode
+    ? MODE_CONFIG[activeSearchMode].icon
+    : Search;
+
+  const renderModeStatusBadge = (extraClassName?: string) => (
+    <Badge
+      className={cn(
+        "text-sm font-medium border",
+        activeModeConfig
+          ? activeModeConfig.activeClasses
+          : "bg-muted text-muted-foreground border-muted-foreground/50",
+        extraClassName
+      )}
+    >
+      {activeModeConfig ? activeModeConfig.message : defaultModeLabel}
+    </Badge>
+  );
 
   // Encontrar produto selecionado
   const selectedProduct = useMemo(() => {
@@ -412,35 +817,22 @@ export default function LancamentoRepuxados() {
       return;
     }
 
-    let finalMotivo = tempParadaMotivo;
-    let finalCausaId: number | undefined = undefined;
-
-    if (!isCustomParadaMotivo) {
-      if (!tempParadaCausaId) {
-        toast.warning("Selecione uma causa da lista ou clique em Novo para digitar");
-        return;
-      }
-      finalCausaId = Number(tempParadaCausaId);
-      const causaObj = causasQuery.data?.find(c => c.id === finalCausaId);
-      finalMotivo = causaObj ? causaObj.descricao : "Parada formal registrada";
-    } else {
-      if (!tempParadaMotivo.trim()) {
-        toast.warning("Digite o motivo da parada");
-        return;
-      }
-      finalMotivo = tempParadaMotivo.trim();
+    if (!tempParadaCausaId) {
+      toast.warning("Selecione uma causa da lista");
+      return;
     }
+    const finalMotivoParadaId = Number(tempParadaCausaId);
+    const motivoObj = motivosParadaQuery.data?.find(m => m.id === finalMotivoParadaId);
+    const finalMotivo = motivoObj ? motivoObj.descricao : "Parada registrada";
 
     setParadas([...paradas, {
       tempoMinutos: tempo,
       motivo: finalMotivo,
-      causaQuebraId: finalCausaId
+      motivoParadaId: finalMotivoParadaId
     }]);
 
     setTempParadaMin("");
-    setTempParadaMotivo("");
     setTempParadaCausaId("");
-    setIsCustomParadaMotivo(false);
   };
 
   const handleRemoveParada = (index: number) => {
@@ -491,7 +883,7 @@ export default function LancamentoRepuxados() {
       paradas: paradas.map(p => ({
         tempoMinutos: p.tempoMinutos,
         motivo: p.motivo,
-        causaQuebraId: p.causaQuebraId
+        motivoParadaId: p.motivoParadaId
       }))
     });
   };
@@ -519,9 +911,15 @@ export default function LancamentoRepuxados() {
       toast.error("A descrição é obrigatória");
       return;
     }
-    await createCausaMutation.mutateAsync({
-      descricao: newCausaDescricao,
-    });
+    if (causaModalOrigin === "parada") {
+      await createMotivoParadaMutation.mutateAsync({
+        descricao: newCausaDescricao,
+      });
+    } else {
+      await createCausaMutation.mutateAsync({
+        descricao: newCausaDescricao,
+      });
+    }
   };
 
   return (
@@ -614,79 +1012,186 @@ export default function LancamentoRepuxados() {
             </CardHeader>
             <CardContent className="p-6">
               <form onSubmit={handleSalvarLancamento} className="space-y-4">
-                {/* Turno e Operador (Lado a Lado na mesma linha, Turno Primeiro) */}
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label>Turno *</Label>
-                    <Select value={turno} onValueChange={setTurno}>
-                      <SelectTrigger className="w-full">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="Turno A">Turno A</SelectItem>
-                        <SelectItem value="Turno B">Turno B</SelectItem>
-                        <SelectItem value="Turno C">Turno C</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label className="flex justify-between items-center">
-                      <span>Operador *</span>
-                      <button 
-                        type="button" 
-                        onClick={() => setShowRepuxadorModal(true)}
-                        className="text-xs text-indigo-600 hover:text-indigo-800 flex items-center gap-0.5"
-                      >
-                        <UserPlus size={12} /> Novo
-                      </button>
-                    </Label>
-                    <Select value={repuxadorId} onValueChange={setRepuxadorId}>
-                      <SelectTrigger className="w-full">
-                        <SelectValue placeholder="Selecione..." />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {repuxadoresQuery.data?.filter(r => r.ativo).map((r) => (
-                          <SelectItem key={r.id} value={String(r.id)}>{r.nome}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-
                 {/* Produto */}
                 <div className="space-y-2">
-                  <Label>Produto Repuxado *</Label>
-                  {!productId ? (
-                    <div className="relative">
-                      <Input
-                        type="text"
-                        placeholder="Buscar código ou descrição..."
-                        value={productSearch}
-                        onChange={(e) => setProductSearch(e.target.value)}
-                        onFocus={() => setIsProductSearchFocused(true)}
-                        onBlur={() => setTimeout(() => setIsProductSearchFocused(false), 200)}
-                        className="w-full bg-white border border-slate-300 rounded-md py-2 px-3 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
-                      />
-                      {isProductSearchFocused && (
-                        <div className="absolute z-50 w-full mt-1 bg-white border border-slate-200 rounded-md shadow-lg max-h-60 overflow-y-auto">
-                          {filteredProducts.length === 0 ? (
-                            <div className="p-3 text-xs text-muted-foreground text-center">Nenhum produto encontrado</div>
-                          ) : (
-                            filteredProducts.map((p) => (
-                              <button
-                                key={p.id}
+                  <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between mb-1">
+                    <Label className="text-base font-semibold">Produto Repuxado *</Label>
+                    {!productId && (
+                      <>
+                        <div className="hidden md:flex items-center gap-1.5">
+                          {orderedModes.map((mode) => {
+                            const config = MODE_CONFIG[mode];
+                            const isActive = activeSearchMode === mode;
+                            const Icon = config.icon;
+                            return (
+                              <Button
+                                key={mode}
                                 type="button"
-                                onClick={() => {
-                                  setProductId(p.id);
-                                  setProductSearch("");
-                                }}
-                                className="w-full text-left px-3 py-2 text-xs hover:bg-indigo-50 focus:bg-indigo-50 flex flex-col border-b border-slate-50 last:border-b-0"
+                                variant={isActive ? "default" : "outline"}
+                                onClick={() => activateMode(mode)}
+                                className={cn(
+                                  isActive ? config.activeClasses : undefined
+                                )}
+                                size="icon"
+                                title={config.label}
                               >
-                                <span className="font-bold text-indigo-700">{p.code}</span>
-                                <span className="text-slate-600 truncate">{p.description}</span>
-                              </button>
-                            ))
+                                <Icon className="h-4 w-4" />
+                              </Button>
+                            );
+                          })}
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => setShowDatePicker(true)}
+                            size="icon"
+                            title="Escolher data de lançamento"
+                          >
+                            <Calendar className="h-4 w-4" />
+                          </Button>
+                        </div>
+
+                        <div className="md:hidden space-y-2 w-full">
+                          <Accordion
+                            type="single"
+                            collapsible
+                            value={mobileModeAccordionOpen ? "mode-selector" : ""}
+                            onValueChange={(value) => setMobileModeAccordionOpen(value === "mode-selector")}
+                            className="border rounded-lg"
+                          >
+                            <AccordionItem value="mode-selector" className="border-b-0">
+                              <AccordionTrigger className="px-4 py-2 text-sm hover:no-underline">
+                                <div className="flex w-full items-center justify-between">
+                                  <div className="flex items-center gap-2 text-sm font-medium">
+                                    <ActiveModeIcon className="h-4 w-4" />
+                                    {activeModeLabel}
+                                  </div>
+                                </div>
+                              </AccordionTrigger>
+                              <AccordionContent className="px-4 pt-2 pb-4">
+                                <div className="flex flex-col gap-2">
+                                  {orderedModes.map((mode) => {
+                                    const config = MODE_CONFIG[mode];
+                                    const isActive = activeSearchMode === mode;
+                                    const Icon = config.icon;
+                                    return (
+                                      <Button
+                                        key={mode}
+                                        type="button"
+                                        variant="outline"
+                                        className={cn(
+                                          "justify-start text-xs",
+                                          isActive && config.activeClasses
+                                        )}
+                                        onClick={() => {
+                                          activateMode(mode);
+                                          setMobileModeAccordionOpen(false);
+                                        }}
+                                      >
+                                        <Icon className="mr-2 h-3.5 w-3.5" />
+                                        {config.label}
+                                      </Button>
+                                    );
+                                  })}
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    onClick={() => {
+                                      setShowDatePicker(true);
+                                      setMobileModeAccordionOpen(false);
+                                    }}
+                                    className="justify-start text-xs"
+                                  >
+                                    <Calendar className="mr-2 h-3.5 w-3.5" />
+                                    Escolher data
+                                  </Button>
+                                </div>
+                              </AccordionContent>
+                            </AccordionItem>
+                          </Accordion>
+                          {renderModeStatusBadge("w-full justify-center")}
+                        </div>
+                      </>
+                    )}
+                  </div>
+
+                  {!productId ? (
+                    <div className="space-y-3">
+                      <div className="relative">
+                        <Input
+                          id="search"
+                          ref={searchInputRef}
+                          type="text"
+                          placeholder={searchPlaceholder}
+                          value={productSearch}
+                          onChange={(e) => setProductSearch(e.target.value)}
+                          onKeyDown={handleSearchKeyDown}
+                          onFocus={() => {
+                            if (activeSearchMode !== "reader" && activeSearchMode !== "camera") {
+                              setIsProductSearchFocused(true);
+                            }
+                          }}
+                          onBlur={() => setTimeout(() => setIsProductSearchFocused(false), 200)}
+                          className="w-full bg-white border border-slate-300 rounded-md py-2 px-3 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
+                        />
+                        {/* Autocomplete Local (Padrão) */}
+                        {(!activeSearchMode || activeSearchMode !== "partial") && isProductSearchFocused && (
+                          <div className="absolute z-50 w-full mt-1 bg-white border border-slate-200 rounded-md shadow-lg max-h-60 overflow-y-auto">
+                            {filteredProducts.length === 0 ? (
+                              <div className="p-3 text-xs text-muted-foreground text-center">Nenhum produto encontrado</div>
+                            ) : (
+                              filteredProducts.map((p) => (
+                                <button
+                                  key={p.id}
+                                  type="button"
+                                  onClick={() => {
+                                    setProductId(p.id);
+                                    setProductSearch("");
+                                    void playBeep();
+                                  }}
+                                  className="w-full text-left px-3 py-2 text-xs hover:bg-indigo-50 focus:bg-indigo-50 flex flex-col border-b border-slate-50 last:border-b-0"
+                                >
+                                  <span className="font-bold text-indigo-700">{p.code}</span>
+                                  <span className="text-slate-600 truncate">{p.description}</span>
+                                </button>
+                              ))
+                            )}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Resultados da busca parcial trpc */}
+                      {activeSearchMode === "partial" && productSearch.length >= 2 && (
+                        <div className="border border-slate-200 rounded-lg p-3 bg-slate-50 max-h-80 overflow-y-auto space-y-2">
+                          {searchResults.length === 0 ? (
+                            <p className="text-xs text-muted-foreground text-center py-2">Nenhum produto encontrado</p>
+                          ) : (
+                            <div className="grid grid-cols-1 gap-2">
+                              {searchResults.map((product) => (
+                                <button
+                                  key={product.id}
+                                  type="button"
+                                  onClick={() => {
+                                    setProductId(product.id);
+                                    setProductSearch("");
+                                    void playBeep();
+                                  }}
+                                  className="p-2.5 border rounded-lg bg-white hover:bg-accent hover:border-indigo-500 transition-colors text-left flex gap-3 items-center"
+                                >
+                                  {product.photoUrl && (
+                                    <img
+                                      src={product.photoUrl}
+                                      alt={product.code}
+                                      className="w-10 h-10 rounded object-cover flex-shrink-0"
+                                    />
+                                  )}
+                                  <div className="flex-1 min-w-0">
+                                    <p className="font-bold text-indigo-700 text-xs">{product.code}</p>
+                                    <p className="text-[11px] text-slate-600 truncate">{product.description}</p>
+                                    {product.barcode && <p className="text-[10px] text-muted-foreground">EAN: {product.barcode}</p>}
+                                  </div>
+                                </button>
+                              ))}
+                            </div>
                           )}
                         </div>
                       )}
@@ -729,6 +1234,46 @@ export default function LancamentoRepuxados() {
                   )}
                 </div>
 
+                {/* Turno e Operador (Lado a Lado na mesma linha, Turno Primeiro) */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Turno *</Label>
+                    <Select value={turno} onValueChange={setTurno}>
+                      <SelectTrigger className="w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Turno A">Turno A</SelectItem>
+                        <SelectItem value="Turno B">Turno B</SelectItem>
+                        <SelectItem value="Turno C">Turno C</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label className="flex justify-between items-center">
+                      <span>Operador *</span>
+                      <button 
+                        type="button" 
+                        onClick={() => setShowRepuxadorModal(true)}
+                        className="text-xs text-indigo-600 hover:text-indigo-800 flex items-center gap-0.5"
+                      >
+                        <UserPlus size={12} /> Novo
+                      </button>
+                    </Label>
+                    <Select value={repuxadorId} onValueChange={setRepuxadorId}>
+                      <SelectTrigger className="w-full">
+                        <SelectValue placeholder="Selecione..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {repuxadoresQuery.data?.filter(r => r.ativo).map((r) => (
+                          <SelectItem key={r.id} value={String(r.id)}>{r.nome}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
                 {/* Seção de Horários (Com Relógios Analógicos SVG ou Digitação Manual) */}
                 <div className="space-y-3">
                   <div className="flex justify-between items-center">
@@ -754,24 +1299,16 @@ export default function LancamentoRepuxados() {
                     <div className="flex flex-col items-center space-y-4">
                       {/* Dois Relógios lado a lado */}
                       <div className="flex justify-center gap-4 w-full">
-                        <div className="space-y-1 flex flex-col items-center">
-                          <span className="text-[11px] font-semibold text-slate-500">Início: {horaInicio}</span>
-                          <AnalogClock
-                            value={horaInicio}
-                            onChange={setHoraInicio}
-                            mode={clockStartMode}
-                            setMode={setClockStartMode}
-                          />
-                        </div>
-                        <div className="space-y-1 flex flex-col items-center">
-                          <span className="text-[11px] font-semibold text-slate-500">Fim: {horaFim}</span>
-                          <AnalogClock
-                            value={horaFim}
-                            onChange={setHoraFim}
-                            mode={clockEndMode}
-                            setMode={setClockEndMode}
-                          />
-                        </div>
+                        <RetroDigitalClock
+                          value={horaInicio}
+                          onChange={setHoraInicio}
+                          label="Início"
+                        />
+                        <RetroDigitalClock
+                          value={horaFim}
+                          onChange={setHoraFim}
+                          label="Fim"
+                        />
                       </div>
 
                       {/* Atalhos de Turno */}
@@ -900,7 +1437,7 @@ export default function LancamentoRepuxados() {
                     </div>
                   )}
 
-                  {/* Add Parada inline com Autocomplete/Sugestões e Causa/Motivo Unificado */}
+                  {/* Add Parada inline com Causa/Motivo Selecionável e Modal de Cadastro */}
                   <div className="grid grid-cols-12 gap-1.5 items-end">
                     <div className="col-span-3">
                       <Label className="text-[10px] text-muted-foreground text-center block">Minutos</Label>
@@ -916,53 +1453,28 @@ export default function LancamentoRepuxados() {
                     <div className="col-span-7">
                       <Label className="text-[10px] text-muted-foreground flex justify-between items-center">
                         <span>Causa/Motivo *</span>
-                        {isCustomParadaMotivo ? (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setIsCustomParadaMotivo(false);
-                              setTempParadaCausaId("");
-                              setTempParadaMotivo("");
-                            }}
-                            className="text-[9px] text-indigo-600 hover:text-indigo-800 font-bold flex items-center gap-0.5"
-                          >
-                            Selecionar da lista
-                          </button>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setIsCustomParadaMotivo(true);
-                              setTempParadaCausaId("");
-                              setTempParadaMotivo("");
-                            }}
-                            className="text-[9px] text-indigo-600 hover:text-indigo-800 font-bold flex items-center gap-0.5"
-                          >
-                            <Plus size={10} /> Novo (Digitar)
-                          </button>
-                        )}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setCausaModalOrigin("parada");
+                            setShowCausaModal(true);
+                          }}
+                          className="text-[9px] text-indigo-600 hover:text-indigo-800 font-bold flex items-center gap-0.5"
+                        >
+                          <Plus size={10} /> Novo
+                        </button>
                       </Label>
                       
-                      {isCustomParadaMotivo ? (
-                        <Input 
-                          type="text" 
-                          placeholder="Digite o motivo da parada..." 
-                          value={tempParadaMotivo}
-                          onChange={(e) => setTempParadaMotivo(e.target.value)}
-                          className="h-8 text-xs font-medium"
-                        />
-                      ) : (
-                        <Select value={tempParadaCausaId} onValueChange={setTempParadaCausaId}>
-                          <SelectTrigger className="h-8 text-xs">
-                            <SelectValue placeholder="Selecione..." />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {causasQuery.data?.filter(c => c.ativo).map((c) => (
-                              <SelectItem key={c.id} value={String(c.id)}>{c.descricao}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      )}
+                      <Select value={tempParadaCausaId} onValueChange={setTempParadaCausaId}>
+                        <SelectTrigger className="h-8 text-xs">
+                          <SelectValue placeholder="Selecione..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {motivosParadaQuery.data?.filter(m => m.ativo).map((m) => (
+                            <SelectItem key={m.id} value={String(m.id)}>{m.descricao}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                     </div>
                     
                     <div className="col-span-2">
@@ -975,25 +1487,6 @@ export default function LancamentoRepuxados() {
                         Add
                       </Button>
                     </div>
-                    
-                    {/* Histórico/Motivos frequentes (exibir apenas no modo digitação manual para autocomplete!) */}
-                    {isCustomParadaMotivo && motivosFrequentesQuery.data && motivosFrequentesQuery.data.length > 0 && (
-                      <div className="col-span-12 mt-1.5">
-                        <span className="text-[9px] text-muted-foreground block mb-1 font-semibold">Motivos frequentes (Toque para preencher):</span>
-                        <div className="flex flex-wrap gap-1 max-h-16 overflow-y-auto pb-0.5">
-                          {motivosFrequentesQuery.data.map((motivoStr, i) => (
-                            <button
-                              key={i}
-                              type="button"
-                              onClick={() => setTempParadaMotivo(motivoStr)}
-                              className="text-[9px] bg-indigo-50/80 hover:bg-indigo-100/90 text-indigo-700 px-2 py-0.5 rounded-full border border-indigo-100/60 transition-colors shrink-0 font-medium"
-                            >
-                              {motivoStr}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    )}
                   </div>
                 </div>
 
@@ -1189,31 +1682,138 @@ export default function LancamentoRepuxados() {
         </DialogContent>
       </Dialog>
 
-      {/* Modal Nova Causa */}
+      {/* Modal Nova Causa / Motivo */}
       <Dialog open={showCausaModal} onOpenChange={setShowCausaModal}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Cadastrar Motivo de Quebra</DialogTitle>
-            <DialogDescription>Adicione um motivo padronizado de desperdício ou quebra</DialogDescription>
+            <DialogTitle>
+              {causaModalOrigin === "parada" ? "Cadastrar Motivo de Parada" : "Cadastrar Motivo de Quebra"}
+            </DialogTitle>
+            <DialogDescription>
+              {causaModalOrigin === "parada" 
+                ? "Adicione um motivo padronizado de parada de máquina" 
+                : "Adicione um motivo padronizado de desperdício ou quebra"}
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label>Descrição da Causa *</Label>
+              <Label>
+                {causaModalOrigin === "parada" ? "Descrição do Motivo *" : "Descrição da Causa *"}
+              </Label>
               <Input 
                 value={newCausaDescricao} 
                 onChange={(e) => setNewCausaDescricao(e.target.value)} 
-                placeholder="ex: Rebarba de material irregular" 
+                placeholder={causaModalOrigin === "parada" ? "ex: Manutenção corretiva" : "ex: Rebarba de material irregular"} 
               />
             </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowCausaModal(false)}>Cancelar</Button>
-            <Button onClick={handleSaveCausa} disabled={createCausaMutation.isPending}>
-              {createCausaMutation.isPending ? "Cadastrando..." : "Cadastrar"}
+            <Button 
+              onClick={handleSaveCausa} 
+              disabled={createCausaMutation.isPending || createMotivoParadaMutation.isPending}
+            >
+              {createCausaMutation.isPending || createMotivoParadaMutation.isPending ? "Cadastrando..." : "Cadastrar"}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Date Picker Modal */}
+      <Dialog open={showDatePicker} onOpenChange={setShowDatePicker}>
+        <DialogContent className="w-full max-w-[300px]">
+          <DialogHeader>
+            <DialogTitle>Escolher Data de Lançamento</DialogTitle>
+            <DialogDescription>
+              Selecione a data em que deseja lançar a produção.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <Label htmlFor="date-input">Data</Label>
+            <Input
+              id="date-input"
+              type="date"
+              value={dateInputValue}
+              onChange={(e) => setDateInputValue(e.target.value)}
+              max={format(today, "yyyy-MM-dd")}
+              className="mt-2"
+            />
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setShowDatePicker(false)}>
+              Cancelar
+            </Button>
+            <Button onClick={handleDateSelection}>
+              Confirmar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Not Found Modal */}
+      <Dialog
+        open={showNotFoundModal}
+        onOpenChange={(open) => {
+          setShowNotFoundModal(open);
+          if (!open) {
+            focusSearchInput();
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Produto Não Encontrado</DialogTitle>
+          </DialogHeader>
+          <div className="flex flex-col items-center py-6 gap-4">
+            <div className="w-16 h-16 rounded-full bg-yellow-100 flex items-center justify-center">
+              <AlertCircle className="w-10 h-10 text-yellow-600" />
+            </div>
+            <div className="text-center">
+              <p className="text-lg font-semibold">Produto não encontrado</p>
+              <p className="text-sm text-muted-foreground mt-1">
+                Nenhum produto corresponde à busca: <strong>{notFoundCode}</strong>
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button onClick={handleCloseNotFoundModal}>Fechar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Camera Scanner */}
+      <CameraScannerDialog
+        open={cameraScannerOpen}
+        onClose={() => {
+          setCameraScannerOpen(false);
+          if (activeSearchMode === "camera") {
+            const fallbackMode = lastNonCameraModeRef.current ?? "reader";
+            setActiveSearchMode(fallbackMode);
+            if (fallbackMode === "reader") {
+              searchInputRef.current?.blur();
+            }
+          }
+          focusSearchInput();
+        }}
+        onDetected={handleCameraDetected}
+      />
+
+      {activeSearchMode === "camera" && (
+        <div className="fixed bottom-6 left-1/2 z-40 flex -translate-x-1/2 transform">
+          <Button
+            type="button"
+            size="icon"
+            className="h-14 w-14 rounded-full bg-orange-500 text-white hover:bg-orange-600 shadow-lg shadow-orange-500/30"
+            onClick={() => {
+              setCameraScannerOpen(true);
+            }}
+            disabled={cameraScannerOpen}
+            aria-label="Reabrir câmera"
+          >
+            <Camera className="h-6 w-6" />
+          </Button>
+        </div>
+      )}
     </div>
   );
 }
