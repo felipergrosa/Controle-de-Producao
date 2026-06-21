@@ -99,21 +99,82 @@ export default function DashboardRepuxo() {
         </div>
         
         {/* Filtro de Período */}
-        <div className="flex items-center gap-2 bg-background border rounded-lg p-2 shadow-sm">
-          <Calendar className="h-4 w-4 text-muted-foreground" />
-          <Input 
-            type="date" 
-            value={startDateStr} 
-            onChange={(e) => setStartDateStr(e.target.value)}
-            className="border-0 shadow-none h-8 w-36 focus-visible:ring-0 cursor-pointer"
-          />
-          <span className="text-muted-foreground text-xs font-semibold">até</span>
-          <Input 
-            type="date" 
-            value={endDateStr} 
-            onChange={(e) => setEndDateStr(e.target.value)}
-            className="border-0 shadow-none h-8 w-36 focus-visible:ring-0 cursor-pointer"
-          />
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Atalhos de período */}
+          <div className="flex items-center gap-1">
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 text-xs"
+              onClick={() => {
+                setStartDateStr(format(subDays(today, 30), "yyyy-MM-dd"));
+                setEndDateStr(format(today, "yyyy-MM-dd"));
+              }}
+            >
+              30 dias
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 text-xs"
+              onClick={() => {
+                setStartDateStr("2024-01-01");
+                setEndDateStr("2024-12-31");
+              }}
+            >
+              2024
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 text-xs"
+              onClick={() => {
+                setStartDateStr("2025-01-01");
+                setEndDateStr("2025-12-31");
+              }}
+            >
+              2025
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 text-xs"
+              onClick={() => {
+                setStartDateStr("2026-01-01");
+                setEndDateStr(format(today, "yyyy-MM-dd"));
+              }}
+            >
+              2026
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 text-xs bg-indigo-50 border-indigo-200 text-indigo-700 hover:bg-indigo-100"
+              onClick={() => {
+                setStartDateStr("2024-01-01");
+                setEndDateStr(format(today, "yyyy-MM-dd"));
+              }}
+            >
+              Tudo
+            </Button>
+          </div>
+
+          <div className="flex items-center gap-2 bg-background border rounded-lg p-2 shadow-sm">
+            <Calendar className="h-4 w-4 text-muted-foreground" />
+            <Input 
+              type="date" 
+              value={startDateStr} 
+              onChange={(e) => setStartDateStr(e.target.value)}
+              className="border-0 shadow-none h-8 w-36 focus-visible:ring-0 cursor-pointer"
+            />
+            <span className="text-muted-foreground text-xs font-semibold">até</span>
+            <Input 
+              type="date" 
+              value={endDateStr} 
+              onChange={(e) => setEndDateStr(e.target.value)}
+              className="border-0 shadow-none h-8 w-36 focus-visible:ring-0 cursor-pointer"
+            />
+          </div>
         </div>
       </div>
 

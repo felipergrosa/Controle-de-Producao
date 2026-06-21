@@ -4,41 +4,15 @@ import * as fs from "fs";
 import * as path from "path";
 import { getDb } from "../server/db";
 import { products, repuxadores, causasQuebra, motivosParada, producaoRepuxados, paradasMaquina } from "../drizzle/schema";
-import { eq, sql } from "drizzle-orm";
-
-// Interfaces de suporte
-interface PlanilhaProduto {
-  nome: string;
-  diametro: number;
-  espessura: number;
-  pesoG: number;
-  idealPH: number;
-}
-
-interface PlanilhaCausa {
-  descricao: string;
-}
-
-interface PlanilhaRepuxador {
-  nome: string;
-  turnoPadrao: string;
-}
-
-interface PlanilhaMotivoParada {
-  descricao: string;
-}
+import { sql } from "drizzle-orm";
 
 // Conversores de tipo do Excel
 function parseExcelDate(val: any): Date {
   if (val instanceof Date) return val;
   const serial = Number(val);
-  if (isNaN(serial)) {
-    return new Date();
-  }
-  // Excel usa base 30/12/1899 devido a bug de ano bissexto em 1900
+  if (isNaN(serial)) return new Date();
   const date = new Date(Date.UTC(1899, 11, 30));
   date.setDate(date.getDate() + Math.floor(serial));
-  // Definir meio-dia local para blindar contra fuso horário
   return new Date(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate(), 12, 0, 0);
 }
 
@@ -60,12 +34,12 @@ async function main() {
   const args = process.argv.slice(2);
   const isCommit = args.includes("--commit");
 
-  console.log("=== SCRIPT DE IMPORTAÇÃO HISTÓRICA DE REPUXADOS ===");
+  console.log("=== SCRIPT DE IMPORTAÇÃO HISTÓRICA DE REPUXADOS (v2 - IDEMPOTENTE) ===");
   if (isCommit) {
     console.log(" MODO: GRAVAÇÃO ATIVA (--commit)");
   } else {
     console.log(" MODO: SIMULAÇÃO / TESTE (--dry-run). Nenhuma gravação ocorrerá no banco.");
-    console.log(" Dica: Para gravar de verdade, execute: pnpm tsx scripts/import-repuxados.ts --commit");
+    console.log(" Dica: Para gravar de verdade, execute: npx tsx scripts/import-repuxados.ts --commit");
   }
 
   const filePath = path.resolve("Controle Repuxado.xlsx");
@@ -84,10 +58,7 @@ async function main() {
   const buffer = fs.readFileSync(filePath);
   const workbook = XLSX.read(buffer, { type: "buffer" });
 
-  const abaDadosName = "DADOS";
-  const abaControleName = "CONTROLE";
-
-  if (!workbook.SheetNames.includes(abaDadosName) || !workbook.SheetNames.includes(abaControleName)) {
+  if (!workbook.SheetNames.includes("DADOS") || !workbook.SheetNames.includes("CONTROLE")) {
     console.error("Erro: A planilha deve conter as abas 'DADOS' e 'CONTROLE'.");
     process.exit(1);
   }
@@ -95,194 +66,131 @@ async function main() {
   // ==========================================
   // PASSO 1: PROCESSAR ABA DADOS (Cadastros)
   // ==========================================
-  console.log("\n[Passo 1] Processando aba DADOS...");
-  const sheetDados = workbook.Sheets[abaDadosName];
-  const dadosRows = XLSX.utils.sheet_to_json(sheetDados, { header: 1 }) as any[];
+  console.log("\n[Passo 1] Processando aba DADOS (cadastros)...");
+  const dadosRows = XLSX.utils.sheet_to_json(workbook.Sheets["DADOS"], { header: 1 }) as any[];
 
-  const planProdutos: PlanilhaProduto[] = [];
-  const planRepuxadores: PlanilhaRepuxador[] = [];
-  const planMotivosParada: PlanilhaMotivoParada[] = [];
-  const planCausasQuebra: PlanilhaCausa[] = [];
+  const planProdutos: { nome: string; diametro: number; espessura: number; pesoG: number; idealPH: number }[] = [];
+  const planRepuxadores: { nome: string }[] = [];
+  const planMotivosParada: { descricao: string }[] = [];
+  const planCausasQuebra: { descricao: string }[] = [];
 
-  // Mapeamento das colunas da aba DADOS com base na análise prévia:
-  // Col 0: PRODUTOS | Col 1: DIAM. | Col 2: ESP. | Col 3: PESO | Col 7: IDEAL P/H | Col 9: REPUXADOR | Col 11: SETOR RESPONSAVEL (Motivo Parada) | Col 13: TIPOS DE CAUSA QUEBRA
   for (let i = 1; i < dadosRows.length; i++) {
     const row = dadosRows[i];
     if (!row) continue;
-
-    // Produtos
     const prodNome = row[0]?.toString().trim();
-    if (prodNome && !prodNome.startsWith("**")) { // Ignora cabeçalhos internos como **REFILE**
-      planProdutos.push({
-        nome: prodNome,
-        diametro: Number(row[1]) || 0,
-        espessura: Number(row[2]) || 0,
-        pesoG: (Number(row[3]) || 0) * 1000, // Multiplica por 1000 para converter de kg para gramas
-        idealPH: Number(row[7]) || 0,
-      });
+    if (prodNome && !prodNome.startsWith("**")) {
+      planProdutos.push({ nome: prodNome, diametro: Number(row[1]) || 0, espessura: Number(row[2]) || 0, pesoG: (Number(row[3]) || 0) * 1000, idealPH: Number(row[7]) || 0 });
     }
-
-    // Repuxadores
     const repNome = row[9]?.toString().trim();
-    if (repNome) {
-      planRepuxadores.push({
-        nome: repNome.toUpperCase(),
-        turnoPadrao: "Turno A", // Fallback padrão
-      });
-    }
-
-    // Motivos de Parada (Setor Responsável)
+    if (repNome) planRepuxadores.push({ nome: repNome.toUpperCase() });
     const motivoDesc = row[11]?.toString().trim();
-    if (motivoDesc) {
-      planMotivosParada.push({
-        descricao: motivoDesc,
-      });
-    }
-
-    // Causas de Quebra
+    if (motivoDesc) planMotivosParada.push({ descricao: motivoDesc });
     const causaDesc = row[13]?.toString().trim();
-    if (causaDesc) {
-      planCausasQuebra.push({
-        descricao: causaDesc,
-      });
-    }
+    if (causaDesc) planCausasQuebra.push({ descricao: causaDesc });
   }
 
-  // Filtrar duplicados locais nas listas
-  const uniquePlanProdutos = planProdutos.filter((v, idx, self) => self.findIndex(t => t.nome === v.nome) === idx);
-  const uniquePlanRepuxadores = planRepuxadores.filter((v, idx, self) => self.findIndex(t => t.nome === v.nome) === idx);
-  const uniquePlanMotivosParada = planMotivosParada.filter((v, idx, self) => self.findIndex(t => t.descricao === v.descricao) === idx);
-  const uniquePlanCausasQuebra = planCausasQuebra.filter((v, idx, self) => self.findIndex(t => t.descricao === v.descricao) === idx);
+  const uniqProd = planProdutos.filter((v, i, s) => s.findIndex(t => t.nome === v.nome) === i);
+  const uniqRep = planRepuxadores.filter((v, i, s) => s.findIndex(t => t.nome === v.nome) === i);
+  const uniqMot = planMotivosParada.filter((v, i, s) => s.findIndex(t => t.descricao === v.descricao) === i);
+  const uniqCau = planCausasQuebra.filter((v, i, s) => s.findIndex(t => t.descricao === v.descricao) === i);
 
-  console.log(`- Encontrados na planilha: ${uniquePlanProdutos.length} produtos, ${uniquePlanRepuxadores.length} operadores, ${uniquePlanMotivosParada.length} motivos de parada, ${uniquePlanCausasQuebra.length} causas de quebra.`);
+  console.log(`- Planilha DADOS: ${uniqProd.length} produtos, ${uniqRep.length} operadores, ${uniqMot.length} motivos parada, ${uniqCau.length} causas quebra.`);
 
-  // Dicionários para cache de IDs correspondentes no banco
-  const mapProdutos = new Map<string, string>(); // nome -> id
-  const mapRepuxadores = new Map<string, number>(); // nome -> id
-  const mapMotivosParada = new Map<string, number>(); // desc -> id
-  const mapCausasQuebra = new Map<string, number>(); // desc -> id
+  // Carregar caches do banco
+  console.log("Carregando dados existentes no banco...");
+  const mapProdutos = new Map<string, string>();
+  const mapRepuxadores = new Map<string, number>();
+  const mapMotivosParada = new Map<string, number>();
+  const mapCausasQuebra = new Map<string, number>();
 
-  // Carregar dados existentes no banco para não duplicar
-  console.log("Carregando tabelas do banco de dados...");
-  const dbProducts = await db.select().from(products);
-  const dbRepuxadores = await db.select().from(repuxadores);
-  const dbMotivosParada = await db.select().from(motivosParada);
-  const dbCausasQuebra = await db.select().from(causasQuebra);
+  (await db.select().from(products)).forEach(p => mapProdutos.set(p.code.toUpperCase(), p.id));
+  (await db.select().from(repuxadores)).forEach(r => mapRepuxadores.set(r.nome.toUpperCase(), r.id));
+  (await db.select().from(motivosParada)).forEach(m => mapMotivosParada.set(m.descricao.toUpperCase(), m.id));
+  (await db.select().from(causasQuebra)).forEach(c => mapCausasQuebra.set(c.descricao.toUpperCase(), c.id));
 
-  // Popular caches iniciais
-  dbProducts.forEach(p => mapProdutos.set(p.code.toUpperCase(), p.id));
-  dbRepuxadores.forEach(r => mapRepuxadores.set(r.nome.toUpperCase(), r.id));
-  dbMotivosParada.forEach(m => mapMotivosParada.set(m.descricao.toUpperCase(), m.id));
-  dbCausasQuebra.forEach(c => mapCausasQuebra.set(c.descricao.toUpperCase(), c.id));
+  // ─── Carregar CHAVES DE LANÇAMENTOS EXISTENTES para evitar duplicatas ───────
+  // Chave: "DATA|PRODUCT_ID|REPUXADOR_ID|HORA_INICIO"
+  console.log("Carregando índice de lançamentos já existentes (idempotência)...");
+  const existingEntries = await db.select({
+    dataProducao: producaoRepuxados.dataProducao,
+    productId: producaoRepuxados.productId,
+    repuxadorId: producaoRepuxados.repuxadorId,
+    horaInicio: producaoRepuxados.horaInicio,
+  }).from(producaoRepuxados);
 
-  // Cadastrar novos elementos no banco (se --commit ativo)
+  const existingKeys = new Set<string>();
+  existingEntries.forEach(e => {
+    const dataStr = typeof e.dataProducao === "string" ? e.dataProducao : (e.dataProducao as Date).toISOString().split("T")[0];
+    existingKeys.add(`${dataStr}|${e.productId}|${e.repuxadorId}|${e.horaInicio}`);
+  });
+  console.log(`  ${existingKeys.size} lançamentos já no banco (serão pulados se duplicados).`);
+
+  // Registrar novas dimensões no banco
   if (isCommit) {
-    console.log("Salvando novas dimensões de cadastro no banco...");
-
-    // Cadastrar novos operadores
-    for (const rep of uniquePlanRepuxadores) {
+    console.log("\nSalvando novas dimensões de cadastro no banco...");
+    for (const rep of uniqRep) {
       if (!mapRepuxadores.has(rep.nome)) {
-        const [result] = await db.insert(repuxadores).values({
-          nome: rep.nome,
-          turnoPadrao: rep.turnoPadrao,
-        });
-        const newId = (result as any).insertId;
-        mapRepuxadores.set(rep.nome, newId);
-        console.log(`+ Operador cadastrado: ${rep.nome} (ID: ${newId})`);
+        const [r] = await db.insert(repuxadores).values({ nome: rep.nome, turnoPadrao: "Turno A", ativo: true });
+        const id = (r as any).insertId;
+        mapRepuxadores.set(rep.nome, id);
+        console.log(`  + Operador: ${rep.nome} (ID: ${id})`);
       }
     }
-
-    // Cadastrar novos motivos de parada (Setores)
-    for (const mot of uniquePlanMotivosParada) {
+    for (const mot of uniqMot) {
       const key = mot.descricao.toUpperCase();
       if (!mapMotivosParada.has(key)) {
-        const [result] = await db.insert(motivosParada).values({
-          descricao: mot.descricao,
-        });
-        const newId = (result as any).insertId;
-        mapMotivosParada.set(key, newId);
-        console.log(`+ Motivo de parada cadastrado: ${mot.descricao} (ID: ${newId})`);
+        const [r] = await db.insert(motivosParada).values({ descricao: mot.descricao, ativo: true });
+        const id = (r as any).insertId;
+        mapMotivosParada.set(key, id);
+        console.log(`  + Motivo parada: ${mot.descricao} (ID: ${id})`);
       }
     }
-
-    // Cadastrar novas causas de quebra
-    for (const cau of uniquePlanCausasQuebra) {
+    for (const cau of uniqCau) {
       const key = cau.descricao.toUpperCase();
       if (!mapCausasQuebra.has(key)) {
-        const [result] = await db.insert(causasQuebra).values({
-          descricao: cau.descricao,
-        });
-        const newId = (result as any).insertId;
-        mapCausasQuebra.set(key, newId);
-        console.log(`+ Causa de quebra cadastrada: ${cau.descricao} (ID: ${newId})`);
+        const [r] = await db.insert(causasQuebra).values({ descricao: cau.descricao, ativo: true });
+        const id = (r as any).insertId;
+        mapCausasQuebra.set(key, id);
+        console.log(`  + Causa quebra: ${cau.descricao} (ID: ${id})`);
       }
     }
-
-    // Cadastrar novos produtos
-    for (const prod of uniquePlanProdutos) {
+    for (const prod of uniqProd) {
       const key = prod.nome.toUpperCase();
       if (!mapProdutos.has(key)) {
         const uuid = crypto.randomUUID();
-        await db.insert(products).values({
-          id: uuid,
-          code: prod.nome,
-          description: prod.nome,
-          pesoUnitarioG: prod.pesoG.toFixed(3),
-          diametroMm: prod.diametro.toFixed(3),
-          espessuraMm: prod.espessura.toFixed(2),
-          idealPecasHora: prod.idealPH,
-        });
+        await db.insert(products).values({ id: uuid, code: prod.nome, description: prod.nome, pesoUnitarioG: prod.pesoG.toFixed(3), diametroMm: prod.diametro.toFixed(3), espessuraMm: prod.espessura.toFixed(2), idealPecasHora: prod.idealPH });
         mapProdutos.set(key, uuid);
-        console.log(`+ Produto cadastrado: ${prod.nome} (ID: ${uuid})`);
+        console.log(`  + Produto: ${prod.nome}`);
       }
     }
   } else {
-    // Modo dry-run: Apenas simular cadastros nos dicionários temporários
-    let idCounter = 99000;
-    uniquePlanRepuxadores.forEach(r => {
-      if (!mapRepuxadores.has(r.nome)) {
-        mapRepuxadores.set(r.nome, idCounter++);
-      }
-    });
-    uniquePlanMotivosParada.forEach(m => {
-      const key = m.descricao.toUpperCase();
-      if (!mapMotivosParada.has(key)) {
-        mapMotivosParada.set(key, idCounter++);
-      }
-    });
-    uniquePlanCausasQuebra.forEach(c => {
-      const key = c.descricao.toUpperCase();
-      if (!mapCausasQuebra.has(key)) {
-        mapCausasQuebra.set(key, idCounter++);
-      }
-    });
-    uniquePlanProdutos.forEach(p => {
-      const key = p.nome.toUpperCase();
-      if (!mapProdutos.has(key)) {
-        mapProdutos.set(key, crypto.randomUUID());
-      }
-    });
+    // Dry-run: simular IDs temporários
+    let fakeId = 99000;
+    uniqRep.forEach(r => { if (!mapRepuxadores.has(r.nome)) mapRepuxadores.set(r.nome, fakeId++); });
+    uniqMot.forEach(m => { const k = m.descricao.toUpperCase(); if (!mapMotivosParada.has(k)) mapMotivosParada.set(k, fakeId++); });
+    uniqCau.forEach(c => { const k = c.descricao.toUpperCase(); if (!mapCausasQuebra.has(k)) mapCausasQuebra.set(k, fakeId++); });
+    uniqProd.forEach(p => { const k = p.nome.toUpperCase(); if (!mapProdutos.has(k)) mapProdutos.set(k, crypto.randomUUID()); });
     console.log("Simulação de cadastros concluída.");
   }
 
   // ==========================================
-  // PASSO 2: PROCESSAR ABA CONTROLE (Lançamentos de Produção)
+  // PASSO 2: PROCESSAR ABA CONTROLE
   // ==========================================
-  console.log("\n[Passo 2] Processando aba CONTROLE (Lançamentos históricos)...");
-  const sheetControle = workbook.Sheets[abaControleName];
-  const controleRows = XLSX.utils.sheet_to_json(sheetControle, { header: 1 }) as any[];
+  console.log("\n[Passo 2] Processando aba CONTROLE (lançamentos históricos)...");
+  const controleRows = XLSX.utils.sheet_to_json(workbook.Sheets["CONTROLE"], { header: 1 }) as any[];
 
-  let totalLancados = 0;
-  let totalPecasProduzidas = 0;
-  let totalQuebras = 0;
+  let totalNovos = 0;
+  let totalDuplicados = 0;
   let totalIgnorados = 0;
+  let totalPecas = 0;
+  let totalQuebras = 0;
 
-  // Coleções para lote
-  const lotesProducao: any[] = [];
-  const paradasParaVincular: { indexLote: number; tempo: number; motivoDesc: string; setorDesc: string }[] = [];
+  const lotes: any[] = [];
+  const paradas: { indexLote: number; tempo: number; motivoDesc: string; setorDesc: string }[] = [];
 
-  // Mapeamento de colunas aba CONTROLE:
-  // Col 0: DATA | Col 1: PRODUTO | Col 2: REPUXADOR | Col 3: HORA INÍCIO | Col 4: HORA FINAL | Col 7: QTD PRODUZIDA | Col 9: PERCAS | Col 12: SETOR RESP. (Parada) | Col 13: CAUSA
+  // Estatísticas por ano para o relatório final
+  const porAno: Record<string, { novos: number; duplicados: number }> = {};
+
   for (let i = 1; i < controleRows.length; i++) {
     const row = controleRows[i];
     if (!row) continue;
@@ -291,185 +199,160 @@ async function main() {
     const rawProd = row[1]?.toString().trim();
     const rawRep = row[2]?.toString().trim();
 
-    if (!rawData || !rawProd || !rawRep) {
-      totalIgnorados++;
-      continue;
-    }
+    if (!rawData || !rawProd || !rawRep) { totalIgnorados++; continue; }
 
-    const dataProducaoDate = parseExcelDate(rawData);
+    const dataDate = parseExcelDate(rawData);
+    const dataStr = `${dataDate.getFullYear()}-${String(dataDate.getMonth() + 1).padStart(2, "0")}-${String(dataDate.getDate()).padStart(2, "0")}`;
+    const ano = dataDate.getFullYear().toString();
+    if (!porAno[ano]) porAno[ano] = { novos: 0, duplicados: 0 };
+
     const prodKey = rawProd.toUpperCase();
     const repKey = rawRep.toUpperCase();
+    const horaInicio = parseExcelTime(row[3]);
 
-    // Buscar ou criar produto dinamicamente
-    let productIdVal = mapProdutos.get(prodKey);
-    if (!productIdVal) {
+    // Resolver produto
+    let productId = mapProdutos.get(prodKey);
+    if (!productId) {
       const uuid = crypto.randomUUID();
       if (isCommit) {
-        await db.insert(products).values({
-          id: uuid,
-          code: rawProd,
-          description: rawProd,
-          pesoUnitarioG: "0.000",
-          diametroMm: "0.000",
-          espessuraMm: "0.00",
-          idealPecasHora: 0,
-        });
-        console.log(`+ Produto dinâmico criado (não estava na aba DADOS): ${rawProd} (ID: ${uuid})`);
+        await db.insert(products).values({ id: uuid, code: rawProd, description: rawProd, pesoUnitarioG: "0.000", diametroMm: "0.000", espessuraMm: "0.00", idealPecasHora: 0 });
+        console.log(`  + Produto dinâmico: ${rawProd}`);
       }
       mapProdutos.set(prodKey, uuid);
-      productIdVal = uuid;
+      productId = uuid;
     }
 
-    // Buscar ou criar operador dinamicamente
-    let repuxadorIdVal = mapRepuxadores.get(repKey);
-    if (!repuxadorIdVal) {
+    // Resolver repuxador
+    let repuxadorId = mapRepuxadores.get(repKey);
+    if (!repuxadorId) {
       if (isCommit) {
-        const [result] = await db.insert(repuxadores).values({
-          nome: rawRep.toUpperCase(),
-          turnoPadrao: "Turno A",
-        });
-        const newId = (result as any).insertId;
-        mapRepuxadores.set(repKey, newId);
-        repuxadorIdVal = newId;
-        console.log(`+ Operador dinâmico criado (não estava na aba DADOS): ${rawRep} (ID: ${newId})`);
+        const [r] = await db.insert(repuxadores).values({ nome: rawRep.toUpperCase(), turnoPadrao: "Turno A", ativo: true });
+        const id = (r as any).insertId;
+        mapRepuxadores.set(repKey, id);
+        repuxadorId = id;
+        console.log(`  + Operador dinâmico: ${rawRep}`);
       } else {
         const fakeId = Math.floor(Math.random() * 1000) + 9999000;
         mapRepuxadores.set(repKey, fakeId);
-        repuxadorIdVal = fakeId;
+        repuxadorId = fakeId;
       }
     }
 
-    const horaInicioStr = parseExcelTime(row[3]);
-    const horaFimStr = parseExcelTime(row[4]);
+    // ─── VERIFICAR DUPLICATA ─────────────────────────────────────────────────
+    const dedupeKey = `${dataStr}|${productId}|${repuxadorId}|${horaInicio}`;
+    if (existingKeys.has(dedupeKey)) {
+      totalDuplicados++;
+      porAno[ano].duplicados++;
+      continue;
+    }
+    // Marcar como processado para evitar duplicatas dentro da própria planilha
+    existingKeys.add(dedupeKey);
+    // ─────────────────────────────────────────────────────────────────────────
+
+    const horaFim = parseExcelTime(row[4]);
     const pecasProd = Number(row[7]) || 0;
     const pecasQueb = Number(row[9]) || 0;
 
-    // Identificar ou criar causa de quebra dinamicamente
+    // Causa de quebra
     const rawCausa = row[13]?.toString().trim();
-    let causaQuebraIdVal: number | undefined = undefined;
+    let causaQuebraId: number | undefined;
     if (pecasQueb > 0 && rawCausa) {
       const causaKey = rawCausa.toUpperCase();
-      let cachedId = mapCausasQuebra.get(causaKey);
-      if (!cachedId) {
+      let id = mapCausasQuebra.get(causaKey);
+      if (!id) {
         if (isCommit) {
-          const [result] = await db.insert(causasQuebra).values({
-            descricao: rawCausa,
-          });
-          const newId = (result as any).insertId;
-          mapCausasQuebra.set(causaKey, newId);
-          causaQuebraIdVal = newId;
-          console.log(`+ Causa de quebra dinâmica criada: ${rawCausa} (ID: ${newId})`);
+          const [r] = await db.insert(causasQuebra).values({ descricao: rawCausa, ativo: true });
+          id = (r as any).insertId;
+          mapCausasQuebra.set(causaKey, id);
         } else {
-          const fakeId = Math.floor(Math.random() * 1000) + 888000;
-          mapCausasQuebra.set(causaKey, fakeId);
-          causaQuebraIdVal = fakeId;
+          id = Math.floor(Math.random() * 1000) + 888000;
+          mapCausasQuebra.set(causaKey, id);
         }
-      } else {
-        causaQuebraIdVal = cachedId;
       }
+      causaQuebraId = id;
     }
 
     const producaoUuid = crypto.randomUUID();
-
-    lotesProducao.push({
+    lotes.push({
       id: producaoUuid,
-      productId: productIdVal,
-      repuxadorId: repuxadorIdVal,
-      dataProducao: dataProducaoDate,
-      turno: "Turno A", // Padrão histórico
-      horaInicio: horaInicioStr,
-      horaFim: horaFimStr,
+      productId,
+      repuxadorId,
+      dataProducao: dataStr,
+      turno: "Turno A",
+      horaInicio,
+      horaFim,
       pecasProduzidas: pecasProd,
       pecasQuebradas: pecasQueb,
-      causaQuebraId: causaQuebraIdVal,
+      causaQuebraId: causaQuebraId ?? null,
       obs: rawCausa ? `Causa: ${rawCausa}` : null,
-      createdBy: 1, // Admin default
+      createdBy: 1,
     });
 
-    // Se houver parada descrita na linha (Setor Responsável e tempo)
-    const tempoTotalMinutos = Number(row[5] || 0) * 24 * 60; // Conversão de fração de dia para minutos
+    // Parada de máquina
+    const tempoMinutos = Math.round(Number(row[5] || 0) * 24 * 60);
     const setorParada = row[12]?.toString().trim();
-    if (setorParada && tempoTotalMinutos > 0) {
+    if (setorParada && tempoMinutos > 0) {
       const setorKey = setorParada.toUpperCase();
-      let motivoParadaIdVal = mapMotivosParada.get(setorKey);
-      if (!motivoParadaIdVal) {
+      let motId = mapMotivosParada.get(setorKey);
+      if (!motId) {
         if (isCommit) {
-          const [result] = await db.insert(motivosParada).values({
-            descricao: setorParada,
-          });
-          const newId = (result as any).insertId;
-          mapMotivosParada.set(setorKey, newId);
-          motivoParadaIdVal = newId;
-          console.log(`+ Motivo de parada dinâmico criado: ${setorParada} (ID: ${newId})`);
+          const [r] = await db.insert(motivosParada).values({ descricao: setorParada, ativo: true });
+          motId = (r as any).insertId;
+          mapMotivosParada.set(setorKey, motId);
         } else {
-          const fakeId = Math.floor(Math.random() * 1000) + 777000;
-          mapMotivosParada.set(setorKey, fakeId);
-          motivoParadaIdVal = fakeId;
+          motId = Math.floor(Math.random() * 1000) + 777000;
+          mapMotivosParada.set(setorKey, motId);
         }
       }
-
-      paradasParaVincular.push({
-        indexLote: lotesProducao.length - 1,
-        tempo: Math.round(tempoTotalMinutos),
-        motivoDesc: `Setor: ${setorParada}`,
-        setorDesc: setorParada,
-      });
+      paradas.push({ indexLote: lotes.length - 1, tempo: tempoMinutos, motivoDesc: `Setor: ${setorParada}`, setorDesc: setorParada });
     }
 
-    totalLancados++;
-    totalPecasProduzidas += pecasProd;
+    totalNovos++;
+    totalPecas += pecasProd;
     totalQuebras += pecasQueb;
+    porAno[ano].novos++;
   }
 
-  console.log(`- Total de lançamentos preparados para gravação: ${totalLancados}`);
-  console.log(`- Soma total de peças produzidas: ${totalPecasProduzidas}`);
-  console.log(`- Soma total de quebras históricas: ${totalQuebras}`);
-  console.log(`- Linhas vazias ignoradas: ${totalIgnorados}`);
+  // ─── RELATÓRIO ──────────────────────────────────────────────────────────────
+  console.log(`\n📊 RESUMO DA IMPORTAÇÃO:`);
+  console.log(`  ✅ Novos lançamentos para gravar : ${totalNovos}`);
+  console.log(`  ♻️  Duplicados ignorados          : ${totalDuplicados}`);
+  console.log(`  ⚠️  Linhas inválidas ignoradas    : ${totalIgnorados}`);
+  console.log(`  📦 Peças produzidas (novas)       : ${totalPecas}`);
+  console.log(`  🔴 Peças quebradas (novas)        : ${totalQuebras}`);
+  console.log(`\n  Por ano:`);
+  Object.entries(porAno).sort().forEach(([ano, v]) => {
+    console.log(`    ${ano}: +${v.novos} novos | ${v.duplicados} já existiam`);
+  });
 
-  // Executar a gravação de fatos no banco
-  if (isCommit && lotesProducao.length > 0) {
-    console.log("\nSalvando lançamentos no banco de dados...");
-    
-    // Usando transação Drizzle
+  if (isCommit && lotes.length > 0) {
+    console.log("\nSalvando lançamentos no banco...");
     await db.transaction(async (tx) => {
-      // Inserir lançamentos de repuxo em lotes de 100
       const batchSize = 100;
-      for (let i = 0; i < lotesProducao.length; i += batchSize) {
-        const batch = lotesProducao.slice(i, i + batchSize);
+      for (let i = 0; i < lotes.length; i += batchSize) {
+        const batch = lotes.slice(i, i + batchSize);
         await tx.insert(producaoRepuxados).values(batch);
-        console.log(`+ Gravados ${i + batch.length}/${lotesProducao.length} lançamentos...`);
+        console.log(`  Gravados ${i + batch.length}/${lotes.length} lançamentos...`);
       }
-
-      // Inserir paradas de máquina vinculadas
-      if (paradasParaVincular.length > 0) {
-        console.log("Gravando paradas de máquina vinculadas...");
-        const paradasValues = paradasParaVincular.map(p => {
-          const prodObj = lotesProducao[p.indexLote];
-          const motivoParadaIdVal = mapMotivosParada.get(p.setorDesc.toUpperCase());
-          return {
-            id: crypto.randomUUID(),
-            producaoRepuxadosId: prodObj.id,
-            tempoMinutos: p.tempo,
-            motivo: p.motivoDesc,
-            motivoParadaId: motivoParadaIdVal,
-          };
-        });
-
+      if (paradas.length > 0) {
+        const paradasValues = paradas.map(p => ({
+          id: crypto.randomUUID(),
+          producaoRepuxadosId: lotes[p.indexLote].id,
+          tempoMinutos: p.tempo,
+          motivo: p.motivoDesc,
+          motivoParadaId: mapMotivosParada.get(p.setorDesc.toUpperCase()),
+        }));
         for (let i = 0; i < paradasValues.length; i += batchSize) {
-          const batch = paradasValues.slice(i, i + batchSize);
-          await tx.insert(paradasMaquina).values(batch);
+          await tx.insert(paradasMaquina).values(paradasValues.slice(i, i + batchSize));
         }
-        console.log(`+ Gravadas ${paradasParaVincular.length} paradas de máquina.`);
+        console.log(`  + ${paradas.length} paradas de máquina gravadas.`);
       }
     });
-
-    console.log("\n IMPORTAÇÃO CONCLUÍDA COM SUCESSO!");
+    console.log("\n🎉 IMPORTAÇÃO CONCLUÍDA COM SUCESSO!");
+  } else if (!isCommit) {
+    console.log("\n[Simulação] Passe --commit para gravar no banco.");
   } else {
-    console.log("\n[Simulação] Fatos prontos para gravação. Rodar com '--commit' para aplicar.");
-    if (paradasParaVincular.length > 0) {
-      console.log(`[Simulação] ${paradasParaVincular.length} paradas de máquina seriam vinculadas.`);
-    }
-    console.log("Nenhuma alteração foi realizada no banco.");
+    console.log("\nNenhum lançamento novo encontrado para gravar.");
   }
 }
 
