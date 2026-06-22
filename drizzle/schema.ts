@@ -304,3 +304,37 @@ export const turnos = mysqlTable("turnos", {
 
 export type Turno = typeof turnos.$inferSelect;
 export type InsertTurno = typeof turnos.$inferInsert;
+
+/**
+ * Política de Jornada de Trabalho
+ * Define horários, dias e custo operacional por vigência
+ */
+export const politicaJornada = mysqlTable("politica_jornada", {
+  id: int("id").autoincrement().primaryKey(),
+  descricao: varchar("descricao", { length: 255 }).notNull().default("Política Padrão"),
+  // Dias de trabalho (true = trabalha neste dia)
+  segunda: boolean("segunda").notNull().default(true),
+  terca: boolean("terca").notNull().default(true),
+  quarta: boolean("quarta").notNull().default(true),
+  quinta: boolean("quinta").notNull().default(true),
+  sexta: boolean("sexta").notNull().default(true),
+  sabado: boolean("sabado").notNull().default(false),
+  domingo: boolean("domingo").notNull().default(false),
+  // Horários (formato HH:MM)
+  manhaInicio: varchar("manha_inicio", { length: 8 }).notNull().default("07:30"),
+  manhaFim: varchar("manha_fim", { length: 8 }).notNull().default("12:00"),
+  tardeInicio: varchar("tarde_inicio", { length: 8 }).notNull().default("13:00"),
+  tardeFimSegQui: varchar("tarde_fim_seg_qui", { length: 8 }).notNull().default("17:30"),
+  tardeFimSex: varchar("tarde_fim_sex", { length: 8 }).notNull().default("16:30"),
+  // Custo operacional opcional para métricas de custo
+  custoHoraReais: decimal("custo_hora_reais", { precision: 10, scale: 2 }),
+  // Vigência: permite histórico de mudanças
+  vigenciaInicio: date("vigencia_inicio").notNull(),
+  vigenciaFim: date("vigencia_fim"),
+  ativo: boolean("ativo").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
+});
+
+export type PoliticaJornada = typeof politicaJornada.$inferSelect;
+export type InsertPoliticaJornada = typeof politicaJornada.$inferInsert;

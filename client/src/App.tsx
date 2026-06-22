@@ -16,6 +16,7 @@ import Users from "./pages/Users";
 import LancamentoRepuxados from "./pages/LancamentoRepuxados";
 import DashboardRepuxo from "./pages/DashboardRepuxo";
 import GerenciadorCadastros from "./pages/GerenciadorCadastros";
+import InteligenciaOperacional from "./pages/InteligenciaOperacional";
 
 function Router() {
   return (
@@ -75,6 +76,13 @@ function Router() {
         {() => (
           <DashboardLayout>
             <GerenciadorCadastros />
+          </DashboardLayout>
+        )}
+      </Route>
+      <Route path={"/repuxo/inteligencia"}>
+        {() => (
+          <DashboardLayout>
+            <InteligenciaOperacional />
           </DashboardLayout>
         )}
       </Route>

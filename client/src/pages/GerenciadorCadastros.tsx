@@ -19,7 +19,9 @@ import {
   Check, 
   X, 
   ToggleLeft, 
-  ToggleRight 
+  ToggleRight,
+  Calendar,
+  Zap
 } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
@@ -81,6 +83,7 @@ export default function GerenciadorCadastros() {
   const turnosQuery = trpc.turnos.list.useQuery();
   const causasQuery = trpc.causasQuebra.list.useQuery();
   const motivosParadaQuery = trpc.motivosParada.list.useQuery();
+  const politicasQuery = trpc.politicaJornada.list.useQuery();
 
   // ==========================================
   // MUTATIONS DO TRPC
@@ -396,7 +399,7 @@ export default function GerenciadorCadastros() {
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-        <TabsList className="grid grid-cols-4 w-full md:w-[600px] border bg-slate-50/50 p-1">
+        <TabsList className="grid grid-cols-5 w-full md:w-[760px] border bg-slate-50/50 p-1">
           <TabsTrigger value="operadores" className="flex items-center gap-1.5 py-2">
             <Users size={15} /> Operadores
           </TabsTrigger>
@@ -408,6 +411,9 @@ export default function GerenciadorCadastros() {
           </TabsTrigger>
           <TabsTrigger value="paradas" className="flex items-center gap-1.5 py-2">
             <Ban size={15} /> Motivos Parada
+          </TabsTrigger>
+          <TabsTrigger value="jornada" className="flex items-center gap-1.5 py-2">
+            <Calendar size={15} /> Jornada
           </TabsTrigger>
         </TabsList>
 
@@ -1047,7 +1053,274 @@ export default function GerenciadorCadastros() {
             </Card>
           </div>
         </TabsContent>
+
+        {/* ========================================================
+            TABS CONTENT: POLÍTICA DE JORNADA
+           ======================================================== */}
+        <TabsContent value="jornada" className="outline-none">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            {/* Formulário */}
+            <div className="lg:col-span-5 space-y-4">
+              <Card className="border border-border/80 shadow-md">
+                <CardHeader className="bg-slate-50/50 border-b">
+                  <CardTitle className="text-base font-bold flex items-center gap-2">
+                    <Calendar size={18} className="text-violet-500" />
+                    Configurar Política de Jornada
+                  </CardTitle>
+                  <CardDescription>Define os horários e dias de trabalho da fábrica.</CardDescription>
+                </CardHeader>
+                <CardContent className="p-4 space-y-4">
+                  <JornadaForm utils={utils} politicasQuery={politicasQuery} />
+                </CardContent>
+              </Card>
+            </div>
+            {/* Lista */}
+            <div className="lg:col-span-7">
+              <Card className="border border-border/80 shadow-md">
+                <CardHeader className="bg-slate-50/50 border-b">
+                  <CardTitle className="text-base font-bold flex items-center gap-2">
+                    <Zap size={18} className="text-violet-500" />
+                    Políticas Cadastradas
+                  </CardTitle>
+                  <CardDescription>Histórico de políticas de jornada (ordem por vigência).</CardDescription>
+                </CardHeader>
+                <CardContent className="p-0">
+                  {!politicasQuery.data || politicasQuery.data.length === 0 ? (
+                    <div className="text-center py-16 text-muted-foreground text-sm">
+                      Nenhuma política cadastrada ainda.
+                    </div>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <Table>
+                        <TableHeader className="bg-slate-50/50">
+                          <TableRow>
+                            <TableHead>Descrição</TableHead>
+                            <TableHead>Dias</TableHead>
+                            <TableHead>Manhã</TableHead>
+                            <TableHead>Tarde</TableHead>
+                            <TableHead>Vigência</TableHead>
+                            <TableHead>Status</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {politicasQuery.data.map((p) => {
+                            const dias = [
+                              p.segunda && "Seg", p.terca && "Ter", p.quarta && "Qua",
+                              p.quinta && "Qui", p.sexta && "Sex", p.sabado && "Sáb", p.domingo && "Dom"
+                            ].filter(Boolean).join(", ");
+                            return (
+                              <TableRow key={p.id}>
+                                <TableCell className="font-semibold text-sm">{p.descricao}</TableCell>
+                                <TableCell className="text-xs text-slate-600">{dias}</TableCell>
+                                <TableCell className="text-xs">{p.manhaInicio}–{p.manhaFim}</TableCell>
+                                <TableCell className="text-xs">
+                                  <div>Seg-Qui: {p.tardeInicio}–{p.tardeFimSegQui}</div>
+                                  <div>Sex: {p.tardeInicio}–{p.tardeFimSex}</div>
+                                </TableCell>
+                                <TableCell className="text-xs">
+                                  <div>{(() => { const d = p.vigenciaInicio; if (!d) return "—"; if (d instanceof Date) return d.toISOString().split("T")[0]; return String(d).split("T")[0]; })()}</div>
+                                  {p.vigenciaFim ? <div className="text-slate-400">até {(() => { const d = p.vigenciaFim; if (!d) return "—"; if (d instanceof Date) return d.toISOString().split("T")[0]; return String(d).split("T")[0]; })()}</div> : <div className="text-emerald-500 font-semibold">Vigente</div>}
+                                </TableCell>
+                                <TableCell>
+                                  {p.ativo ? (
+                                    <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-semibold text-[10px] border border-emerald-200">Ativa</span>
+                                  ) : (
+                                    <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 font-semibold text-[10px] border border-slate-200">Inativa</span>
+                                  )}
+                                </TableCell>
+                              </TableRow>
+                            );
+                          })}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+          </div>
+        </TabsContent>
       </Tabs>
+    </div>
+  );
+}
+
+// ==========================================
+// COMPONENTE DO FORMULÁRIO DE JORNADA
+// ==========================================
+function JornadaForm({ utils, politicasQuery }: { utils: any; politicasQuery: any }) {
+  const [descricao, setDescricao] = useState("Política Padrão Nobre");
+  const [segunda, setSegunda] = useState(true);
+  const [terca, setTerca] = useState(true);
+  const [quarta, setQuarta] = useState(true);
+  const [quinta, setQuinta] = useState(true);
+  const [sexta, setSexta] = useState(true);
+  const [sabado, setSabado] = useState(false);
+  const [domingo, setDomingo] = useState(false);
+  const [manhaInicio, setManhaInicio] = useState("07:30");
+  const [manhaFim, setManhaFim] = useState("12:00");
+  const [tardeInicio, setTardeInicio] = useState("13:00");
+  const [tardeFimSegQui, setTardeFimSegQui] = useState("17:30");
+  const [tardeFimSex, setTardeFimSex] = useState("16:30");
+  const [custoHora, setCustoHora] = useState("");
+  const [vigenciaInicio, setVigenciaInicio] = useState("2024-01-01");
+  const [vigenciaFim, setVigenciaFim] = useState("");
+
+  // Cálculo de preview de jornada
+  const toMin = (t: string) => {
+    const [h, m] = t.split(":").map(Number);
+    return (h || 0) * 60 + (m || 0);
+  };
+  const manha = Math.max(0, toMin(manhaFim) - toMin(manhaInicio));
+  const tardeSegQui = Math.max(0, toMin(tardeFimSegQui) - toMin(tardeInicio));
+  const tardeSex = Math.max(0, toMin(tardeFimSex) - toMin(tardeInicio));
+  const diasNormais = [segunda, terca, quarta, quinta].filter(Boolean).length;
+  const fmtH = (m: number) => `${Math.floor(m / 60)}h${m % 60 > 0 ? String(m % 60).padStart(2, '0') + 'min' : ''}`;
+  const jornadaDiaNormal = manha + tardeSegQui;
+  const jornadaDiaSex = manha + tardeSex;
+  const semana = diasNormais * jornadaDiaNormal + (sexta ? jornadaDiaSex : 0);
+  const mes = Math.round((semana / 5) * 22);
+
+  const createMutation = trpc.politicaJornada.create.useMutation({
+    onSuccess: () => {
+      toast.success("Política de jornada criada com sucesso!");
+      utils.politicaJornada.list.invalidate();
+    },
+    onError: (err: any) => toast.error(err.message || "Erro ao criar política"),
+  });
+
+  const handleSave = () => {
+    if (!descricao.trim()) { toast.error("Informe uma descrição"); return; }
+    if (!vigenciaInicio) { toast.error("Informe a data de início de vigência"); return; }
+    const timeReg = /^\d{2}:\d{2}$/;
+    if (!timeReg.test(manhaInicio) || !timeReg.test(manhaFim) || !timeReg.test(tardeInicio) || !timeReg.test(tardeFimSegQui) || !timeReg.test(tardeFimSex)) {
+      toast.error("Verifique os horários (formato HH:MM)");
+      return;
+    }
+    createMutation.mutate({
+      descricao,
+      segunda, terca, quarta, quinta, sexta, sabado, domingo,
+      manhaInicio, manhaFim, tardeInicio, tardeFimSegQui, tardeFimSex,
+      custoHoraReais: custoHora ? Number(custoHora) : null,
+      vigenciaInicio: new Date(vigenciaInicio + "T00:00:00"),
+      vigenciaFim: vigenciaFim ? new Date(vigenciaFim + "T00:00:00") : null,
+    });
+  };
+
+  const DayToggle = ({ label, value, onChange }: { label: string; value: boolean; onChange: (v: boolean) => void }) => (
+    <button
+      type="button"
+      onClick={() => onChange(!value)}
+      className={`px-3 py-1.5 rounded-full text-xs font-bold border transition-all ${
+        value ? "bg-violet-600 text-white border-violet-600" : "bg-white text-slate-500 border-slate-200 hover:border-violet-300"
+      }`}
+    >
+      {label}
+    </button>
+  );
+
+  return (
+    <div className="space-y-4">
+      <div className="space-y-1">
+        <Label className="text-xs font-semibold">Descrição da Política</Label>
+        <Input value={descricao} onChange={e => setDescricao(e.target.value)} className="h-9 text-sm" placeholder="Ex: Política Padrão 2026" />
+      </div>
+
+      <div className="space-y-2">
+        <Label className="text-xs font-semibold">Dias de Trabalho</Label>
+        <div className="flex flex-wrap gap-2">
+          <DayToggle label="Seg" value={segunda} onChange={setSegunda} />
+          <DayToggle label="Ter" value={terca} onChange={setTerca} />
+          <DayToggle label="Qua" value={quarta} onChange={setQuarta} />
+          <DayToggle label="Qui" value={quinta} onChange={setQuinta} />
+          <DayToggle label="Sex" value={sexta} onChange={setSexta} />
+          <DayToggle label="Sáb" value={sabado} onChange={setSabado} />
+          <DayToggle label="Dom" value={domingo} onChange={setDomingo} />
+        </div>
+      </div>
+
+      <div className="space-y-2 border-t pt-3">
+        <Label className="text-xs font-semibold">Turno Manhã (todos os dias)</Label>
+        <div className="flex items-center gap-2">
+          <div className="flex-1">
+            <Label className="text-[10px] text-slate-400">Início</Label>
+            <Input type="time" value={manhaInicio} onChange={e => setManhaInicio(e.target.value)} className="h-9 text-xs" />
+          </div>
+          <span className="text-slate-400 text-xs mt-4">até</span>
+          <div className="flex-1">
+            <Label className="text-[10px] text-slate-400">Fim</Label>
+            <Input type="time" value={manhaFim} onChange={e => setManhaFim(e.target.value)} className="h-9 text-xs" />
+          </div>
+          <span className="text-xs text-violet-600 font-semibold mt-4 whitespace-nowrap">{fmtH(manha)}</span>
+        </div>
+      </div>
+
+      <div className="space-y-2">
+        <Label className="text-xs font-semibold">Início do Turno Tarde (todos os dias)</Label>
+        <Input type="time" value={tardeInicio} onChange={e => setTardeInicio(e.target.value)} className="h-9 text-xs" />
+      </div>
+
+      <div className="space-y-2">
+        <Label className="text-xs font-semibold">Fim Tarde — Seg a Qui</Label>
+        <div className="flex items-center gap-2">
+          <Input type="time" value={tardeFimSegQui} onChange={e => setTardeFimSegQui(e.target.value)} className="h-9 text-xs flex-1" />
+          <span className="text-xs text-violet-600 font-semibold whitespace-nowrap">{fmtH(jornadaDiaNormal)}/dia</span>
+        </div>
+      </div>
+
+      <div className="space-y-2">
+        <Label className="text-xs font-semibold">Fim Tarde — Sexta-feira</Label>
+        <div className="flex items-center gap-2">
+          <Input type="time" value={tardeFimSex} onChange={e => setTardeFimSex(e.target.value)} className="h-9 text-xs flex-1" />
+          <span className="text-xs text-violet-600 font-semibold whitespace-nowrap">{fmtH(jornadaDiaSex)}/dia</span>
+        </div>
+      </div>
+
+      {/* Preview automático */}
+      <div className="bg-violet-50 border border-violet-100 rounded-lg p-3 text-xs space-y-1">
+        <p className="font-semibold text-violet-700">📊 Preview da Jornada</p>
+        <p className="text-slate-600">Semanal: <strong className="text-violet-700">{fmtH(semana)}</strong></p>
+        <p className="text-slate-600">Mensal estimado (22 dias úteis): <strong className="text-violet-700">{fmtH(mes)}</strong></p>
+      </div>
+
+      <div className="space-y-2 border-t pt-3">
+        <Label className="text-xs font-semibold">Custo/hora do operador (R$) — opcional</Label>
+        <Input
+          type="number"
+          min={0}
+          step={0.01}
+          value={custoHora}
+          onChange={e => setCustoHora(e.target.value)}
+          className="h-9 text-xs"
+          placeholder="Ex: 25.00"
+        />
+        <p className="text-[10px] text-slate-400">Se preenchido, ativa cálculo de custo de produção por operador.</p>
+      </div>
+
+      <div className="space-y-2">
+        <Label className="text-xs font-semibold">Vigência</Label>
+        <div className="flex items-center gap-2">
+          <div className="flex-1">
+            <Label className="text-[10px] text-slate-400">Início</Label>
+            <Input type="date" value={vigenciaInicio} onChange={e => setVigenciaInicio(e.target.value)} className="h-9 text-xs" />
+          </div>
+          <span className="text-slate-400 text-xs mt-4">até</span>
+          <div className="flex-1">
+            <Label className="text-[10px] text-slate-400">Fim (opcional)</Label>
+            <Input type="date" value={vigenciaFim} onChange={e => setVigenciaFim(e.target.value)} className="h-9 text-xs" />
+          </div>
+        </div>
+        <p className="text-[10px] text-slate-400">Deixe "Fim" em branco para política vigente indefinidamente.</p>
+      </div>
+
+      <Button
+        onClick={handleSave}
+        disabled={createMutation.isPending}
+        className="w-full bg-violet-600 hover:bg-violet-700 text-white font-semibold"
+      >
+        <Plus size={15} className="mr-2" />
+        {createMutation.isPending ? "Salvando..." : "Salvar Política de Jornada"}
+      </Button>
     </div>
   );
 }

@@ -86,7 +86,15 @@ import {
   deleteTurno,
   updateProducaoRepuxado,
 } from "./db-repuxados";
-
+import {
+  getAllPoliticasJornada,
+  getPoliticaVigente,
+  createPoliticaJornada,
+  updatePoliticaJornada,
+  deactivatePoliticaJornada,
+  calcularMetricasOperadores,
+  calcularResumoJornada,
+} from "./db-jornada";
 
 import { eq } from "drizzle-orm";
 
@@ -1247,6 +1255,129 @@ export const appRouter = router({
       .mutation(async ({ input }) => {
         await deleteMetaRepuxo(input.id);
         return { success: true };
+      }),
+  }),
+
+  // ==========================================
+  // Política de Jornada de Trabalho
+  // ==========================================
+  politicaJornada: router({
+    list: protectedProcedure.query(async () => {
+      return await getAllPoliticasJornada();
+    }),
+    getCurrent: protectedProcedure
+      .input(z.object({ date: z.date().optional() }))
+      .query(async ({ input }) => {
+        const date = input.date ?? new Date();
+        return await getPoliticaVigente(date);
+      }),
+    create: protectedProcedure
+      .input(
+        z.object({
+          descricao: z.string().min(1).max(255),
+          segunda: z.boolean().default(true),
+          terca: z.boolean().default(true),
+          quarta: z.boolean().default(true),
+          quinta: z.boolean().default(true),
+          sexta: z.boolean().default(true),
+          sabado: z.boolean().default(false),
+          domingo: z.boolean().default(false),
+          manhaInicio: z.string().regex(/^\d{2}:\d{2}$/),
+          manhaFim: z.string().regex(/^\d{2}:\d{2}$/),
+          tardeInicio: z.string().regex(/^\d{2}:\d{2}$/),
+          tardeFimSegQui: z.string().regex(/^\d{2}:\d{2}$/),
+          tardeFimSex: z.string().regex(/^\d{2}:\d{2}$/),
+          custoHoraReais: z.number().nonnegative().nullable().optional(),
+          vigenciaInicio: z.date(),
+          vigenciaFim: z.date().nullable().optional(),
+        })
+      )
+      .mutation(async ({ input }) => {
+        return await createPoliticaJornada({
+          ...input,
+          vigenciaInicio: input.vigenciaInicio.toISOString().split("T")[0] as any,
+          vigenciaFim: input.vigenciaFim ? input.vigenciaFim.toISOString().split("T")[0] as any : null,
+          custoHoraReais: input.custoHoraReais ? String(input.custoHoraReais) as any : null,
+          ativo: true,
+        });
+      }),
+    update: protectedProcedure
+      .input(
+        z.object({
+          id: z.number(),
+          descricao: z.string().min(1).max(255).optional(),
+          segunda: z.boolean().optional(),
+          terca: z.boolean().optional(),
+          quarta: z.boolean().optional(),
+          quinta: z.boolean().optional(),
+          sexta: z.boolean().optional(),
+          sabado: z.boolean().optional(),
+          domingo: z.boolean().optional(),
+          manhaInicio: z.string().regex(/^\d{2}:\d{2}$/).optional(),
+          manhaFim: z.string().regex(/^\d{2}:\d{2}$/).optional(),
+          tardeInicio: z.string().regex(/^\d{2}:\d{2}$/).optional(),
+          tardeFimSegQui: z.string().regex(/^\d{2}:\d{2}$/).optional(),
+          tardeFimSex: z.string().regex(/^\d{2}:\d{2}$/).optional(),
+          custoHoraReais: z.number().nonnegative().nullable().optional(),
+          vigenciaInicio: z.date().optional(),
+          vigenciaFim: z.date().nullable().optional(),
+        })
+      )
+      .mutation(async ({ input }) => {
+        const { id, ...updates } = input;
+        return await updatePoliticaJornada(id, {
+          ...updates,
+          vigenciaInicio: updates.vigenciaInicio
+            ? updates.vigenciaInicio.toISOString().split("T")[0] as any
+            : undefined,
+          vigenciaFim: updates.vigenciaFim !== undefined
+            ? (updates.vigenciaFim ? updates.vigenciaFim.toISOString().split("T")[0] as any : null)
+            : undefined,
+          custoHoraReais: updates.custoHoraReais !== undefined
+            ? (updates.custoHoraReais ? String(updates.custoHoraReais) as any : null)
+            : undefined,
+        });
+      }),
+    deactivate: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => {
+        await deactivatePoliticaJornada(input.id);
+        return { success: true };
+      }),
+  }),
+
+  // ==========================================
+  // Inteligência Operacional — Métricas de Jornada
+  // ==========================================
+  inteligenciaOperacional: router({
+    getMetricasOperadores: protectedProcedure
+      .input(
+        z.object({
+          startDate: z.date(),
+          endDate: z.date(),
+          repuxadorId: z.number().optional().nullable(),
+        })
+      )
+      .query(async ({ input }) => {
+        // Buscar dados de lançamentos
+        const { getProducaoRepuxados } = await import("./db-repuxados");
+        let data = await getProducaoRepuxados(input.startDate, input.endDate);
+
+        // Filtrar por operador se necessário
+        if (input.repuxadorId) {
+          data = data.filter((r: any) => r.repuxadorId === input.repuxadorId);
+        }
+
+        // Buscar política vigente para o período
+        const politica = await getPoliticaVigente(input.startDate);
+        if (!politica) {
+          return { metricas: [], resumo: null, politica: null };
+        }
+
+        const metricas = calcularMetricasOperadores(data, input.startDate, input.endDate, politica);
+        const resumo = calcularResumoJornada(metricas, input.startDate, input.endDate, politica);
+
+        return { metricas, resumo, politica };
       }),
   }),
 });

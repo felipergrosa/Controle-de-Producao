@@ -8,7 +8,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { APP_TITLE } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
-import { LayoutDashboard, LogOut, Users, BarChart3, ClipboardList, Upload, FileText, Scale, Activity, Settings, Database, ChevronDown } from "lucide-react";
+import { LayoutDashboard, LogOut, Users, BarChart3, ClipboardList, Upload, FileText, Scale, Activity, Settings, Database, ChevronDown, Zap } from "lucide-react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
 import { Button } from "./ui/button";
@@ -50,6 +50,7 @@ const menuItems: MenuItem[] = [
     children: [
       { icon: Activity, label: "Dashboard de Repuxo", path: "/repuxo/dashboard" },
       { icon: Scale, label: "Lançamento de Repuxados", path: "/repuxo/lancamento" },
+      { icon: Zap, label: "Inteligência Operacional", path: "/repuxo/inteligencia" },
       { icon: Settings, label: "Gerenciador de Cadastros", path: "/repuxo/gerenciador" },
     ]
   },
