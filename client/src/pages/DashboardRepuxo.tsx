@@ -19,6 +19,9 @@ import {
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
+import { cn } from "@/lib/utils";
 import { 
   ResponsiveContainer, 
   AreaChart, 
@@ -48,7 +51,10 @@ import {
   Activity,
   Filter,
   X,
-  SlidersHorizontal
+  SlidersHorizontal,
+  Check,
+  ChevronsUpDown,
+  ArrowUpDown
 } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { format, subDays } from "date-fns";
@@ -86,6 +92,11 @@ export default function DashboardRepuxo() {
 
   // Estado para controlar abertura do modal
   const [isFilterModalOpen, setIsFilterModalOpen] = useState(false);
+  const [produtoOpen, setProdutoOpen] = useState(false);
+  const [searchProduto, setSearchProduto] = useState("");
+
+  // Estado para ordenação local da tabela de Produtos
+  const [rankingProdutosSort, setRankingProdutosSort] = useState<{ field: string, order: "asc" | "desc" }>({ field: "totalKg", order: "desc" });
 
   // Queries de suporte para popular os filtros
   const repuxadoresQuery = trpc.repuxadores.list.useQuery();
@@ -214,6 +225,43 @@ export default function DashboardRepuxo() {
       };
     });
   }, [stats]);
+
+  const sortedRankingProdutos = useMemo(() => {
+    if (!stats?.rankingProdutos) return [];
+    return [...stats.rankingProdutos].sort((a, b) => {
+      const field = rankingProdutosSort.field;
+      const order = rankingProdutosSort.order === "asc" ? 1 : -1;
+      
+      let aVal = a[field];
+      let bVal = b[field];
+      
+      if (typeof aVal === "string") {
+        aVal = aVal.toLowerCase();
+        bVal = bVal.toLowerCase();
+      }
+      
+      if (aVal < bVal) return -1 * order;
+      if (aVal > bVal) return 1 * order;
+      return 0;
+    });
+  }, [stats?.rankingProdutos, rankingProdutosSort]);
+
+  const handleSortRankingProdutos = (field: string) => {
+    setRankingProdutosSort(prev => ({
+      field,
+      order: prev.field === field && prev.order === "desc" ? "asc" : "desc"
+    }));
+  };
+
+  const produtosFiltrados = useMemo(() => {
+    if (!produtosQuery.data) return [];
+    if (!searchProduto) return produtosQuery.data.slice(0, 10);
+    const term = searchProduto.trim().toLowerCase();
+    return produtosQuery.data.filter(p => 
+      p.code.toLowerCase().includes(term) || 
+      p.description.toLowerCase().includes(term)
+    ).slice(0, 10);
+  }, [produtosQuery.data, searchProduto]);
 
   // Formatar dados OEE para o gráfico radial/gauge
   const oeeGaugeData = useMemo(() => {
@@ -435,20 +483,76 @@ export default function DashboardRepuxo() {
 
                 {/* Produto */}
                 <div className="grid gap-2">
-                  <Label htmlFor="produto" className="text-xs font-semibold text-slate-600">Produto</Label>
-                  <Select value={tempProductId} onValueChange={setTempProductId}>
-                    <SelectTrigger id="produto" className="w-full text-xs h-9">
-                      <SelectValue placeholder="Selecione um produto" />
-                    </SelectTrigger>
-                    <SelectContent className="max-h-56">
-                      <SelectItem value="todos" className="text-xs">Todos os produtos</SelectItem>
-                      {produtosQuery.data?.map(p => (
-                        <SelectItem key={p.id} value={p.id} className="text-xs">
-                          {p.code} - {p.description}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <Label className="text-xs font-semibold text-slate-600">Produto</Label>
+                  <Popover open={produtoOpen} onOpenChange={setProdutoOpen}>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        role="combobox"
+                        aria-expanded={produtoOpen}
+                        className="w-full justify-between font-normal text-xs h-9 bg-background px-3"
+                      >
+                        <span className="truncate">
+                          {tempProductId && tempProductId !== "todos"
+                            ? (() => {
+                                const p = produtosQuery.data?.find((prod) => prod.id === tempProductId);
+                                return p ? `${p.code} - ${p.description}` : "Selecione...";
+                              })()
+                            : "Todos os produtos"}
+                        </span>
+                        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+                      <Command shouldFilter={false}>
+                        <CommandInput 
+                          placeholder="Buscar por código ou descrição..." 
+                          className="h-9 text-xs" 
+                          value={searchProduto}
+                          onValueChange={setSearchProduto}
+                        />
+                        <CommandList>
+                          <CommandEmpty>Nenhum produto encontrado.</CommandEmpty>
+                          <CommandGroup className="max-h-[150px] overflow-auto">
+                            <CommandItem
+                              value="todos"
+                              onSelect={() => {
+                                setTempProductId("todos");
+                                setProdutoOpen(false);
+                                setSearchProduto("");
+                              }}
+                              className="text-xs"
+                            >
+                              <Check
+                                className={cn("mr-2 h-4 w-4", tempProductId === "todos" ? "opacity-100" : "opacity-0")}
+                              />
+                              Todos os produtos
+                            </CommandItem>
+                            {produtosFiltrados.map((p) => (
+                              <CommandItem
+                                key={p.id}
+                                value={`${p.code} ${p.description}`}
+                                onSelect={() => {
+                                  setTempProductId(p.id);
+                                  setProdutoOpen(false);
+                                  setSearchProduto("");
+                                }}
+                                className="text-xs"
+                              >
+                                <Check
+                                  className={cn(
+                                    "mr-2 h-4 w-4",
+                                    tempProductId === p.id ? "opacity-100" : "opacity-0"
+                                  )}
+                                />
+                                {p.code} - {p.description}
+                              </CommandItem>
+                            ))}
+                          </CommandGroup>
+                        </CommandList>
+                      </Command>
+                    </PopoverContent>
+                  </Popover>
                 </div>
 
                 {/* Ordenação do Ranking */}
@@ -461,6 +565,8 @@ export default function DashboardRepuxo() {
                     <SelectContent>
                       <SelectItem value="producao_desc" className="text-xs">Maior Produção (KG)</SelectItem>
                       <SelectItem value="producao_asc" className="text-xs">Menor Produção (KG)</SelectItem>
+                      <SelectItem value="pecas_desc" className="text-xs">Maior Quantidade (Pçs)</SelectItem>
+                      <SelectItem value="pecas_asc" className="text-xs">Menor Quantidade (Pçs)</SelectItem>
                       <SelectItem value="oee_desc" className="text-xs">Maior Eficiência OEE</SelectItem>
                       <SelectItem value="quebra_desc" className="text-xs">Maior Taxa de Quebra (%)</SelectItem>
                       <SelectItem value="quebra_asc" className="text-xs">Menor Taxa de Quebra (%)</SelectItem>
@@ -540,6 +646,8 @@ export default function DashboardRepuxo() {
             <Badge variant="secondary" className="gap-1 bg-white border border-slate-200 text-slate-700 font-semibold px-2 py-0.5 shadow-sm text-[10px]">
               Ordenado por: {
                 sortBy === "producao_asc" ? "Menor Produção (KG)" :
+                sortBy === "pecas_desc" ? "Maior Qtd (Pçs)" :
+                sortBy === "pecas_asc" ? "Menor Qtd (Pçs)" :
                 sortBy === "oee_desc" ? "Maior OEE" :
                 sortBy === "quebra_desc" ? "Maior Quebra (%)" :
                 sortBy === "quebra_asc" ? "Menor Quebra (%)" : sortBy
@@ -562,7 +670,7 @@ export default function DashboardRepuxo() {
           {/* Grid de KPIs Principais */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <Card className="shadow-sm border border-border/60 hover:shadow-md transition-shadow">
-              <CardContent className="p-4">
+              <CardContent className="p-4 py-0">
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-xs font-semibold uppercase tracking-wider text-slate-500 flex items-center">
@@ -583,7 +691,7 @@ export default function DashboardRepuxo() {
             </Card>
 
             <Card className="shadow-sm border border-border/60 hover:shadow-md transition-shadow">
-              <CardContent className="p-4">
+              <CardContent className="p-4 py-0">
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-xs font-semibold uppercase tracking-wider text-slate-500 flex items-center">
@@ -604,7 +712,7 @@ export default function DashboardRepuxo() {
             </Card>
 
             <Card className="shadow-sm border border-border/60 hover:shadow-md transition-shadow">
-              <CardContent className="p-4">
+              <CardContent className="p-4 py-0">
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-xs font-semibold uppercase tracking-wider text-slate-500 flex items-center">
@@ -630,7 +738,7 @@ export default function DashboardRepuxo() {
             </Card>
 
             <Card className="shadow-sm border border-border/60 hover:shadow-md transition-shadow">
-              <CardContent className="p-4">
+              <CardContent className="p-4 py-0">
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-xs font-semibold uppercase tracking-wider text-slate-500 flex items-center">
@@ -861,15 +969,25 @@ export default function DashboardRepuxo() {
                     <TableHeader className="bg-slate-50/50">
                       <TableRow>
                         <TableHead className="w-[80px]">Rank</TableHead>
-                        <TableHead className="w-[120px]">Código</TableHead>
-                        <TableHead>Descrição</TableHead>
-                        <TableHead className="text-right">Produção (kg)</TableHead>
-                        <TableHead className="text-right">Produção (pçs)</TableHead>
-                        <TableHead className="text-right">Quebras (%)</TableHead>
+                        <TableHead className="w-[120px] cursor-pointer hover:bg-slate-100 select-none group" onClick={() => handleSortRankingProdutos('code')}>
+                          <div className="flex items-center gap-1">Código <ArrowUpDown className="h-3 w-3 opacity-0 group-hover:opacity-100 transition-opacity" /></div>
+                        </TableHead>
+                        <TableHead className="cursor-pointer hover:bg-slate-100 select-none group" onClick={() => handleSortRankingProdutos('description')}>
+                          <div className="flex items-center gap-1">Descrição <ArrowUpDown className="h-3 w-3 opacity-0 group-hover:opacity-100 transition-opacity" /></div>
+                        </TableHead>
+                        <TableHead className="text-right cursor-pointer hover:bg-slate-100 select-none group" onClick={() => handleSortRankingProdutos('totalKg')}>
+                          <div className="flex items-center justify-end gap-1"><ArrowUpDown className="h-3 w-3 opacity-0 group-hover:opacity-100 transition-opacity" /> Produção (kg)</div>
+                        </TableHead>
+                        <TableHead className="text-right cursor-pointer hover:bg-slate-100 select-none group" onClick={() => handleSortRankingProdutos('totalPecas')}>
+                          <div className="flex items-center justify-end gap-1"><ArrowUpDown className="h-3 w-3 opacity-0 group-hover:opacity-100 transition-opacity" /> Produção (pçs)</div>
+                        </TableHead>
+                        <TableHead className="text-right cursor-pointer hover:bg-slate-100 select-none group" onClick={() => handleSortRankingProdutos('quebraPct')}>
+                          <div className="flex items-center justify-end gap-1"><ArrowUpDown className="h-3 w-3 opacity-0 group-hover:opacity-100 transition-opacity" /> Quebras (%)</div>
+                        </TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {stats?.rankingProdutos?.map((p: any, index: number) => (
+                      {sortedRankingProdutos.map((p: any, index: number) => (
                         <TableRow key={p.id}>
                           <TableCell className="font-semibold">
                             <span className="text-xs text-muted-foreground font-mono">#{index + 1}</span>

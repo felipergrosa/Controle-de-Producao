@@ -542,6 +542,10 @@ export async function getDashboardStats(
 
   if (filters?.sortBy === "producao_asc") {
     listRanking.sort((a, b) => a.totalKg - b.totalKg);
+  } else if (filters?.sortBy === "pecas_desc") {
+    listRanking.sort((a, b) => b.totalPecas - a.totalPecas);
+  } else if (filters?.sortBy === "pecas_asc") {
+    listRanking.sort((a, b) => a.totalPecas - b.totalPecas);
   } else if (filters?.sortBy === "oee_desc") {
     listRanking.sort((a, b) => b.oeeMedio - a.oeeMedio);
   } else if (filters?.sortBy === "quebra_desc") {

@@ -330,11 +330,11 @@ export default function LancamentoRepuxados() {
   const filteredProducts = useMemo(() => {
     if (!produtosQuery.data) return [];
     const term = productSearch.trim().toLowerCase();
-    if (!term) return produtosQuery.data.slice(0, 15);
+    if (!term) return produtosQuery.data.slice(0, 10);
     return produtosQuery.data.filter(p => 
       p.code.toLowerCase().includes(term) || 
       p.description.toLowerCase().includes(term)
-    );
+    ).slice(0, 10);
   }, [productSearch, produtosQuery.data]);
 
   // Lançamentos do dia selecionado
@@ -1050,8 +1050,8 @@ export default function LancamentoRepuxados() {
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* Formulário de Lançamento */}
         <div className="lg:col-span-5 space-y-6">
-          <Card className="border border-border/80 shadow-md">
-            <CardHeader className="bg-slate-50/50 border-b py-3">
+          <Card className="bg-slate-50/50 border border-border/80 shadow-md py-4">
+            <CardHeader className="bg-slate-50/50 border-b">
               <div className="flex flex-row items-center justify-between w-full">
                 <CardTitle className="text-lg flex items-center gap-2">
                   <FileText className="h-5 w-5 text-indigo-500 flex-shrink-0" />
@@ -1091,7 +1091,7 @@ export default function LancamentoRepuxados() {
                 </div>
               </div>
             </CardHeader>
-            <CardContent className="p-6">
+            <CardContent className="py-0">
               <form onSubmit={handleSalvarLancamento} className="space-y-4">
                 {/* Produto */}
                 <div className="space-y-2">
@@ -1653,9 +1653,9 @@ export default function LancamentoRepuxados() {
 
         {/* Tabela de Lançamentos do Dia */}
         <div className="lg:col-span-7 space-y-4">
-          <Card className="border border-border/80 shadow-md">
-            <CardHeader className="bg-slate-50/50 border-b flex flex-col md:flex-row md:items-center justify-between gap-4 py-3">
-              <CardTitle className="text-lg flex items-center gap-2 shrink-0">
+          <Card className="bg-slate-50/50 border border-border/80 shadow-md py-4">
+            <CardHeader className="bg-slate-50/50 border-b flex flex-col md:flex-row md:items-center justify-between gap-4 ">
+              <CardTitle className="text-lg flex items-center gap-2 shrink-0 ">
                 <Clock className="h-5 w-5 text-indigo-500" />
                 Lançamentos do Dia ({format(selectedDateObject, "dd/MM/yyyy")})
               </CardTitle>

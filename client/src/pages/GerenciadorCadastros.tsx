@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -75,6 +75,11 @@ export default function GerenciadorCadastros() {
   const [motivoCodigo, setMotivoCodigo] = useState("");
   const [motivoDescricao, setMotivoDescricao] = useState("");
   const [motivoCor, setMotivoCor] = useState("#f59e0b");
+
+  // ==========================================
+  // ESTADOS - JORNADA
+  // ==========================================
+  const [politicaEdit, setPoliticaEdit] = useState<any>(null);
 
   // ==========================================
   // QUERIES DO TRPC
@@ -194,6 +199,15 @@ export default function GerenciadorCadastros() {
       utils.motivosParada.list.invalidate();
     },
     onError: (err) => toast.error(err.message || "Erro ao inativar motivo")
+  });
+
+  // Jornada
+  const deleteJornada = trpc.politicaJornada.deactivate.useMutation({
+    onSuccess: () => {
+      toast.success("Política de jornada inativada!");
+      utils.politicaJornada.list.invalidate();
+    },
+    onError: (err) => toast.error(err.message || "Erro ao inativar política")
   });
 
   // ==========================================
@@ -587,6 +601,19 @@ export default function GerenciadorCadastros() {
                                 >
                                   {o.ativo ? <ToggleRight size={20} /> : <ToggleLeft size={20} />}
                                 </Button>
+                                <Button 
+                                  size="icon" 
+                                  variant="ghost" 
+                                  className="h-8 w-8 text-red-500 hover:text-red-700"
+                                  onClick={() => {
+                                    if(window.confirm("Deseja realmente apagar este registro?")) {
+                                      deleteOp.mutate({ id: o.id });
+                                    }
+                                  }}
+                                  title="Apagar"
+                                >
+                                  <Trash2 size={14} />
+                                </Button>
                               </div>
                             </TableCell>
                           </TableRow>
@@ -739,6 +766,19 @@ export default function GerenciadorCadastros() {
                                 >
                                   {t.ativo ? <ToggleRight size={20} /> : <ToggleLeft size={20} />}
                                 </Button>
+                                <Button 
+                                  size="icon" 
+                                  variant="ghost" 
+                                  className="h-8 w-8 text-red-500 hover:text-red-700"
+                                  onClick={() => {
+                                    if(window.confirm("Deseja realmente apagar este registro?")) {
+                                      deleteTurno.mutate({ id: t.id });
+                                    }
+                                  }}
+                                  title="Apagar"
+                                >
+                                  <Trash2 size={14} />
+                                </Button>
                               </div>
                             </TableCell>
                           </TableRow>
@@ -889,6 +929,19 @@ export default function GerenciadorCadastros() {
                                   title={c.ativo ? "Inativar" : "Ativar"}
                                 >
                                   {c.ativo ? <ToggleRight size={20} /> : <ToggleLeft size={20} />}
+                                </Button>
+                                <Button 
+                                  size="icon" 
+                                  variant="ghost" 
+                                  className="h-8 w-8 text-red-500 hover:text-red-700"
+                                  onClick={() => {
+                                    if(window.confirm("Deseja realmente apagar este registro?")) {
+                                      deleteCausa.mutate({ id: c.id });
+                                    }
+                                  }}
+                                  title="Apagar"
+                                >
+                                  <Trash2 size={14} />
                                 </Button>
                               </div>
                             </TableCell>
@@ -1041,6 +1094,19 @@ export default function GerenciadorCadastros() {
                                 >
                                   {m.ativo ? <ToggleRight size={20} /> : <ToggleLeft size={20} />}
                                 </Button>
+                                <Button 
+                                  size="icon" 
+                                  variant="ghost" 
+                                  className="h-8 w-8 text-red-500 hover:text-red-700"
+                                  onClick={() => {
+                                    if(window.confirm("Deseja realmente apagar este registro?")) {
+                                      deleteMotivo.mutate({ id: m.id });
+                                    }
+                                  }}
+                                  title="Apagar"
+                                >
+                                  <Trash2 size={14} />
+                                </Button>
                               </div>
                             </TableCell>
                           </TableRow>
@@ -1070,7 +1136,7 @@ export default function GerenciadorCadastros() {
                   <CardDescription>Define os horários e dias de trabalho da fábrica.</CardDescription>
                 </CardHeader>
                 <CardContent className="p-4 space-y-4">
-                  <JornadaForm utils={utils} politicasQuery={politicasQuery} />
+                  <JornadaForm utils={utils} politicasQuery={politicasQuery} editData={politicaEdit} onClearEdit={() => setPoliticaEdit(null)} />
                 </CardContent>
               </Card>
             </div>
@@ -1100,6 +1166,7 @@ export default function GerenciadorCadastros() {
                             <TableHead>Tarde</TableHead>
                             <TableHead>Vigência</TableHead>
                             <TableHead>Status</TableHead>
+                            <TableHead className="text-center w-28">Ações</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -1128,6 +1195,32 @@ export default function GerenciadorCadastros() {
                                     <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 font-semibold text-[10px] border border-slate-200">Inativa</span>
                                   )}
                                 </TableCell>
+                                <TableCell className="text-center">
+                                  <div className="flex items-center justify-center gap-1">
+                                    <Button 
+                                      size="icon" 
+                                      variant="ghost" 
+                                      className="h-8 w-8 text-indigo-600 hover:text-indigo-800"
+                                      onClick={() => setPoliticaEdit(p)}
+                                      title="Editar"
+                                    >
+                                      <Pencil size={14} />
+                                    </Button>
+                                    <Button 
+                                      size="icon" 
+                                      variant="ghost" 
+                                      className="h-8 w-8 text-red-500 hover:text-red-700"
+                                      onClick={() => {
+                                        if(window.confirm("Deseja realmente inativar/apagar esta política?")) {
+                                          deleteJornada.mutate({ id: p.id });
+                                        }
+                                      }}
+                                      title="Apagar"
+                                    >
+                                      <Trash2 size={14} />
+                                    </Button>
+                                  </div>
+                                </TableCell>
                               </TableRow>
                             );
                           })}
@@ -1148,7 +1241,7 @@ export default function GerenciadorCadastros() {
 // ==========================================
 // COMPONENTE DO FORMULÁRIO DE JORNADA
 // ==========================================
-function JornadaForm({ utils, politicasQuery }: { utils: any; politicasQuery: any }) {
+function JornadaForm({ utils, politicasQuery, editData, onClearEdit }: { utils: any; politicasQuery: any; editData?: any; onClearEdit?: () => void }) {
   const [descricao, setDescricao] = useState("Política Padrão Nobre");
   const [segunda, setSegunda] = useState(true);
   const [terca, setTerca] = useState(true);
@@ -1181,12 +1274,56 @@ function JornadaForm({ utils, politicasQuery }: { utils: any; politicasQuery: an
   const semana = diasNormais * jornadaDiaNormal + (sexta ? jornadaDiaSex : 0);
   const mes = Math.round((semana / 5) * 22);
 
+  useEffect(() => {
+    if (editData) {
+      setDescricao(editData.descricao || "");
+      setSegunda(editData.segunda ?? true);
+      setTerca(editData.terca ?? true);
+      setQuarta(editData.quarta ?? true);
+      setQuinta(editData.quinta ?? true);
+      setSexta(editData.sexta ?? true);
+      setSabado(editData.sabado ?? false);
+      setDomingo(editData.domingo ?? false);
+      setManhaInicio(editData.manhaInicio || "07:30");
+      setManhaFim(editData.manhaFim || "12:00");
+      setTardeInicio(editData.tardeInicio || "13:00");
+      setTardeFimSegQui(editData.tardeFimSegQui || "17:30");
+      setTardeFimSex(editData.tardeFimSex || "16:30");
+      setCustoHora(editData.custoHoraReais || "");
+      
+      const fmtDate = (d: any) => {
+        if (!d) return "";
+        if (d instanceof Date) return d.toISOString().split("T")[0];
+        return String(d).split("T")[0];
+      };
+      setVigenciaInicio(fmtDate(editData.vigenciaInicio) || "2024-01-01");
+      setVigenciaFim(fmtDate(editData.vigenciaFim) || "");
+    } else {
+      setDescricao("Política Padrão Nobre");
+      setSegunda(true); setTerca(true); setQuarta(true); setQuinta(true); setSexta(true); setSabado(false); setDomingo(false);
+      setManhaInicio("07:30"); setManhaFim("12:00"); setTardeInicio("13:00"); setTardeFimSegQui("17:30"); setTardeFimSex("16:30");
+      setCustoHora("");
+      setVigenciaInicio(new Date().toISOString().split("T")[0]);
+      setVigenciaFim("");
+    }
+  }, [editData]);
+
   const createMutation = trpc.politicaJornada.create.useMutation({
     onSuccess: () => {
       toast.success("Política de jornada criada com sucesso!");
       utils.politicaJornada.list.invalidate();
+      if(onClearEdit) onClearEdit();
     },
     onError: (err: any) => toast.error(err.message || "Erro ao criar política"),
+  });
+
+  const updateMutation = trpc.politicaJornada.update.useMutation({
+    onSuccess: () => {
+      toast.success("Política atualizada com sucesso!");
+      utils.politicaJornada.list.invalidate();
+      if(onClearEdit) onClearEdit();
+    },
+    onError: (err: any) => toast.error(err.message || "Erro ao atualizar política"),
   });
 
   const handleSave = () => {
@@ -1197,14 +1334,20 @@ function JornadaForm({ utils, politicasQuery }: { utils: any; politicasQuery: an
       toast.error("Verifique os horários (formato HH:MM)");
       return;
     }
-    createMutation.mutate({
+    const payload = {
       descricao,
       segunda, terca, quarta, quinta, sexta, sabado, domingo,
       manhaInicio, manhaFim, tardeInicio, tardeFimSegQui, tardeFimSex,
       custoHoraReais: custoHora ? Number(custoHora) : null,
       vigenciaInicio: new Date(vigenciaInicio + "T00:00:00"),
       vigenciaFim: vigenciaFim ? new Date(vigenciaFim + "T00:00:00") : null,
-    });
+    };
+    
+    if (editData) {
+      updateMutation.mutate({ id: editData.id, ...payload });
+    } else {
+      createMutation.mutate(payload);
+    }
   };
 
   const DayToggle = ({ label, value, onChange }: { label: string; value: boolean; onChange: (v: boolean) => void }) => (
@@ -1313,14 +1456,26 @@ function JornadaForm({ utils, politicasQuery }: { utils: any; politicasQuery: an
         <p className="text-[10px] text-slate-400">Deixe "Fim" em branco para política vigente indefinidamente.</p>
       </div>
 
-      <Button
-        onClick={handleSave}
-        disabled={createMutation.isPending}
-        className="w-full bg-violet-600 hover:bg-violet-700 text-white font-semibold"
-      >
-        <Plus size={15} className="mr-2" />
-        {createMutation.isPending ? "Salvando..." : "Salvar Política de Jornada"}
-      </Button>
+      <div className="flex gap-2">
+        <Button
+          onClick={handleSave}
+          disabled={createMutation.isPending || updateMutation.isPending}
+          className="flex-1 bg-violet-600 hover:bg-violet-700 text-white font-semibold"
+        >
+          <Plus size={15} className="mr-2" />
+          {editData ? "Atualizar Política" : "Salvar Política de Jornada"}
+        </Button>
+        {editData && (
+          <Button 
+            type="button" 
+            variant="outline" 
+            onClick={() => onClearEdit && onClearEdit()}
+            disabled={createMutation.isPending || updateMutation.isPending}
+          >
+            Cancelar
+          </Button>
+        )}
+      </div>
     </div>
   );
 }

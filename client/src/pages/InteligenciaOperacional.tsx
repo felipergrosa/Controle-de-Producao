@@ -352,7 +352,7 @@ export default function InteligenciaOperacional() {
           {/* Ranking Detalhado de Operadores */}
           <Card className="border border-border/60 shadow-sm">
             <CardHeader>
-              <CardTitle className="text-lg flex items-center gap-2">
+              <CardTitle className="text-lg flex items-center gap-2 py-4">
                 <Award className="text-yellow-500" />
                 Ranking Detalhado de Operadores
                 <HelpTooltip content="Tabela completa com métricas de jornada, produtividade e custo por operador. Clique nos cabeçalhos para ordenar." />
