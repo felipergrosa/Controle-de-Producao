@@ -80,6 +80,11 @@ import {
   createMetaRepuxo,
   deleteMetaRepuxo,
   getMotivosParadaFrequentes,
+  getAllTurnos,
+  createTurno,
+  updateTurno,
+  deleteTurno,
+  updateProducaoRepuxado,
 } from "./db-repuxados";
 
 
@@ -960,10 +965,12 @@ export const appRouter = router({
           nome: z.string().min(1),
           matricula: z.string().optional(),
           turnoPadrao: z.string().optional(),
+          cor: z.string().optional(),
+          codigo: z.string().optional(),
         })
       )
       .mutation(async ({ input }) => {
-        return await createRepuxador(input.nome, input.matricula, input.turnoPadrao);
+        return await createRepuxador(input.nome, input.matricula, input.turnoPadrao, input.cor, input.codigo);
       }),
     update: protectedProcedure
       .input(
@@ -972,6 +979,8 @@ export const appRouter = router({
           nome: z.string().optional(),
           matricula: z.string().optional(),
           turnoPadrao: z.string().optional(),
+          cor: z.string().optional(),
+          codigo: z.string().optional(),
           ativo: z.boolean().optional(),
         })
       )
@@ -992,15 +1001,23 @@ export const appRouter = router({
       return await getAllCausasQuebra();
     }),
     create: protectedProcedure
-      .input(z.object({ descricao: z.string().min(1) }))
+      .input(
+        z.object({
+          descricao: z.string().min(1),
+          cor: z.string().optional(),
+          codigo: z.string().optional(),
+        })
+      )
       .mutation(async ({ input }) => {
-        return await createCausaQuebra(input.descricao);
+        return await createCausaQuebra(input.descricao, input.cor, input.codigo);
       }),
     update: protectedProcedure
       .input(
         z.object({
           id: z.number(),
           descricao: z.string().optional(),
+          cor: z.string().optional(),
+          codigo: z.string().optional(),
           ativo: z.boolean().optional(),
         })
       )
@@ -1021,15 +1038,23 @@ export const appRouter = router({
       return await getAllMotivosParada();
     }),
     create: protectedProcedure
-      .input(z.object({ descricao: z.string().min(1) }))
+      .input(
+        z.object({
+          descricao: z.string().min(1),
+          cor: z.string().optional(),
+          codigo: z.string().optional(),
+        })
+      )
       .mutation(async ({ input }) => {
-        return await createMotivoParada(input.descricao);
+        return await createMotivoParada(input.descricao, input.cor, input.codigo);
       }),
     update: protectedProcedure
       .input(
         z.object({
           id: z.number(),
           descricao: z.string().optional(),
+          cor: z.string().optional(),
+          codigo: z.string().optional(),
           ativo: z.boolean().optional(),
         })
       )
@@ -1040,6 +1065,43 @@ export const appRouter = router({
       .input(z.object({ id: z.number() }))
       .mutation(async ({ input }) => {
         await deleteMotivoParada(input.id);
+        return { success: true };
+      }),
+  }),
+
+  // Turnos router
+  turnos: router({
+    list: protectedProcedure.query(async () => {
+      return await getAllTurnos();
+    }),
+    create: protectedProcedure
+      .input(
+        z.object({
+          codigo: z.string().min(1),
+          descricao: z.string().min(1),
+          cor: z.string().optional(),
+        })
+      )
+      .mutation(async ({ input }) => {
+        return await createTurno(input.codigo, input.descricao, input.cor);
+      }),
+    update: protectedProcedure
+      .input(
+        z.object({
+          id: z.number(),
+          codigo: z.string().optional(),
+          descricao: z.string().optional(),
+          cor: z.string().optional(),
+          ativo: z.boolean().optional(),
+        })
+      )
+      .mutation(async ({ input }) => {
+        return await updateTurno(input.id, input);
+      }),
+    delete: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => {
+        await deleteTurno(input.id);
         return { success: true };
       }),
   }),
@@ -1102,10 +1164,53 @@ export const appRouter = router({
         z.object({
           startDate: z.date(),
           endDate: z.date(),
+          repuxadorId: z.number().optional().nullable(),
+          turno: z.string().optional().nullable(),
+          causaQuebraId: z.number().optional().nullable(),
+          motivoParadaId: z.number().optional().nullable(),
+          sortBy: z.string().optional().nullable(),
         })
       )
       .query(async ({ input }) => {
-        return await getDashboardStats(input.startDate, input.endDate);
+        return await getDashboardStats(input.startDate, input.endDate, {
+          repuxadorId: input.repuxadorId,
+          turno: input.turno,
+          causaQuebraId: input.causaQuebraId,
+          motivoParadaId: input.motivoParadaId,
+          sortBy: input.sortBy,
+        });
+      }),
+    update: protectedProcedure
+      .input(
+        z.object({
+          id: z.string(),
+          productId: z.string(),
+          repuxadorId: z.number(),
+          dataProducao: z.date(),
+          turno: z.string(),
+          horaInicio: z.string(),
+          horaFim: z.string(),
+          pecasProduzidas: z.number().int().nonnegative(),
+          pecasQuebradas: z.number().int().nonnegative().optional(),
+          causaQuebraId: z.number().optional().nullable(),
+          obs: z.string().optional().nullable(),
+          paradas: z
+            .array(
+              z.object({
+                tempoMinutos: z.number().int().positive(),
+                motivo: z.string().optional().nullable(),
+                motivoParadaId: z.number().optional().nullable(),
+              })
+            )
+            .optional(),
+        })
+      )
+      .mutation(async ({ input }) => {
+        return await updateProducaoRepuxado(input.id, {
+          ...input,
+          dataProducao: input.dataProducao.toISOString(),
+          pecasQuebradas: input.pecasQuebradas ?? 0,
+        });
       }),
   }),
 

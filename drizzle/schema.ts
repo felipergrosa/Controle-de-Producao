@@ -183,6 +183,8 @@ export const repuxadores = mysqlTable("repuxadores", {
   nome: varchar("nome", { length: 255 }).notNull(),
   matricula: varchar("matricula", { length: 50 }),
   turnoPadrao: varchar("turno_padrao", { length: 20 }),
+  cor: varchar("cor", { length: 50 }).default("#6366f1").notNull(),
+  codigo: varchar("codigo", { length: 50 }).default("").notNull(),
   ativo: boolean("ativo").default(true).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
@@ -196,6 +198,8 @@ export type InsertRepuxador = typeof repuxadores.$inferInsert;
 export const causasQuebra = mysqlTable("causas_quebra", {
   id: int("id").autoincrement().primaryKey(),
   descricao: varchar("descricao", { length: 255 }).notNull(),
+  cor: varchar("cor", { length: 50 }).default("#ef4444").notNull(),
+  codigo: varchar("codigo", { length: 50 }).default("").notNull(),
   ativo: boolean("ativo").default(true).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
@@ -232,6 +236,8 @@ export type InsertProducaoRepuxado = typeof producaoRepuxados.$inferInsert;
 export const motivosParada = mysqlTable("motivos_parada", {
   id: int("id").autoincrement().primaryKey(),
   descricao: varchar("descricao", { length: 255 }).notNull(),
+  cor: varchar("cor", { length: 50 }).default("#f59e0b").notNull(),
+  codigo: varchar("codigo", { length: 50 }).default("").notNull(),
   ativo: boolean("ativo").default(true).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
@@ -283,3 +289,18 @@ export const migrationsTable = mysqlTable("_migrations", {
 }, (table) => [
   uniqueIndex("idx_version").on(table.version),
 ]);
+
+/**
+ * Turnos de trabalho configuráveis
+ */
+export const turnos = mysqlTable("turnos", {
+  id: int("id").autoincrement().primaryKey(),
+  codigo: varchar("codigo", { length: 50 }).notNull().unique(),
+  descricao: varchar("descricao", { length: 255 }).notNull(),
+  cor: varchar("cor", { length: 50 }).default("#6366f1").notNull(),
+  ativo: boolean("ativo").default(true).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export type Turno = typeof turnos.$inferSelect;
+export type InsertTurno = typeof turnos.$inferInsert;

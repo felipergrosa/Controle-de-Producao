@@ -19,6 +19,7 @@ import {
   AlertTriangle, 
   CheckCircle2, 
   Clock, 
+  Pencil,
   Calendar, 
   Scale, 
   UserPlus, 
@@ -30,6 +31,7 @@ import {
   Keyboard,
   ChevronUp,
   ChevronDown,
+  ArrowUpDown,
   ScanLine,
   Camera,
   Search,
@@ -39,6 +41,7 @@ import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { HelpTooltip } from "@/components/HelpTooltip";
 
 function timeToMinutes(timeStr: string): number {
   if (!timeStr) return 0;
@@ -277,6 +280,9 @@ export default function LancamentoRepuxados() {
   const [pecasQuebradas, setPecasQuebradas] = useState("0");
   const [causaQuebraId, setCausaQuebraId] = useState("");
   const [obs, setObs] = useState("");
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [sortField, setSortField] = useState<string | null>(null);
+  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
 
   // States extras para o controle de relógio móvel
   const [showManualTime, setShowManualTime] = useState(false);
@@ -341,6 +347,53 @@ export default function LancamentoRepuxados() {
     endDate: selectedDateObject
   });
 
+  const handleSort = (field: string) => {
+    if (sortField === field) {
+      setSortDirection(sortDirection === "asc" ? "desc" : "asc");
+    } else {
+      setSortField(field);
+      setSortDirection("asc");
+    }
+  };
+
+  const sortedLancamentos = useMemo(() => {
+    if (!lancamentosQuery.data) return [];
+    const items = [...lancamentosQuery.data];
+    if (!sortField) return items;
+
+    return items.sort((a: any, b: any) => {
+      let aVal: any = a[sortField];
+      let bVal: any = b[sortField];
+
+      // Tratamento especial para colunas calculadas
+      if (sortField === "pecasQuebradasPct") {
+        aVal = a.pecasProduzidas > 0 ? (a.pecasQuebradas / a.pecasProduzidas) : 0;
+        bVal = b.pecasProduzidas > 0 ? (b.pecasQuebradas / b.pecasProduzidas) : 0;
+      } else if (sortField === "tempoParadas") {
+        aVal = a.paradas.reduce((acc: number, cur: any) => acc + cur.tempoMinutos, 0);
+        bVal = b.paradas.reduce((acc: number, cur: any) => acc + cur.tempoMinutos, 0);
+      } else if (sortField === "pesoKg") {
+        const aPeso = Number(a.pesoUnitarioG || 0);
+        const bPeso = Number(b.pesoUnitarioG || 0);
+        aVal = (a.pecasProduzidas * aPeso) / 1000;
+        bVal = (b.pecasProduzidas * bPeso) / 1000;
+      }
+
+      if (aVal === undefined || aVal === null) return 1;
+      if (bVal === undefined || bVal === null) return -1;
+
+      if (typeof aVal === "string") {
+        return sortDirection === "asc"
+          ? aVal.localeCompare(bVal)
+          : bVal.localeCompare(aVal);
+      }
+
+      return sortDirection === "asc"
+        ? (aVal > bVal ? 1 : aVal < bVal ? -1 : 0)
+        : (bVal > aVal ? 1 : bVal < aVal ? -1 : 0);
+    });
+  }, [lancamentosQuery.data, sortField, sortDirection]);
+
   // Estatísticas Rápidas de hoje
   const statsQuery = trpc.repuxados.getStats.useQuery({
     startDate: selectedDateObject,
@@ -379,6 +432,29 @@ export default function LancamentoRepuxados() {
     },
     onError: (err) => {
       toast.error(err.message || "Erro ao remover lançamento");
+    }
+  });
+
+  const updateLancamento = trpc.repuxados.update.useMutation({
+    onSuccess: () => {
+      toast.success("Lançamento de repuxo atualizado com sucesso!");
+      setEditingId(null);
+      setProductId("");
+      setPecasProduzidas("");
+      setPecasQuebradas("0");
+      setCausaQuebraId("");
+      setObs("");
+      setParadas([]);
+      setProductSearch("");
+      
+      utils.repuxados.getByDateRange.invalidate();
+      utils.repuxados.getStats.invalidate();
+      utils.products.list.invalidate();
+      utils.motivosParada.list.invalidate();
+      utils.repuxados.getMotivosParadaFrequentes.invalidate();
+    },
+    onError: (err) => {
+      toast.error(err.message || "Erro ao atualizar lançamento");
     }
   });
 
@@ -869,7 +945,7 @@ export default function LancamentoRepuxados() {
       return;
     }
 
-    await createLancamento.mutateAsync({
+    const basePayload = {
       productId,
       repuxadorId: Number(repuxadorId),
       dataProducao: selectedDateObject,
@@ -878,20 +954,59 @@ export default function LancamentoRepuxados() {
       horaFim,
       pecasProduzidas: totalP,
       pecasQuebradas: quebradas,
-      causaQuebraId: causaQuebraId ? Number(causaQuebraId) : undefined,
-      obs,
-      paradas: paradas.map(p => ({
-        tempoMinutos: p.tempoMinutos,
-        motivo: p.motivo,
-        motivoParadaId: p.motivoParadaId
-      }))
-    });
+    };
+
+    if (editingId) {
+      await updateLancamento.mutateAsync({
+        id: editingId,
+        ...basePayload,
+        causaQuebraId: causaQuebraId ? Number(causaQuebraId) : null,
+        obs: obs || null,
+        paradas: paradas.map(p => ({
+          tempoMinutos: p.tempoMinutos,
+          motivo: p.motivo || null,
+          motivoParadaId: p.motivoParadaId || null
+        }))
+      });
+    } else {
+      await createLancamento.mutateAsync({
+        ...basePayload,
+        causaQuebraId: causaQuebraId ? Number(causaQuebraId) : undefined,
+        obs: obs || undefined,
+        paradas: paradas.map(p => ({
+          tempoMinutos: p.tempoMinutos,
+          motivo: p.motivo || undefined,
+          motivoParadaId: p.motivoParadaId
+        }))
+      });
+    }
   };
 
   const handleDeletarLancamento = async (id: string) => {
     if (confirm("Deseja realmente excluir este lançamento de produção?")) {
       await deleteLancamento.mutateAsync({ id });
     }
+  };
+
+  const handleEditarClick = (l: any) => {
+    setEditingId(l.id);
+    setProductId(l.productId);
+    setProductSearch(l.productCode);
+    setRepuxadorId(String(l.repuxadorId));
+    setTurno(l.turno);
+    setHoraInicio(l.horaInicio);
+    setHoraFim(l.horaFim);
+    setPecasProduzidas(String(l.pecasProduzidas));
+    setPecasQuebradas(String(l.pecasQuebradas));
+    setCausaQuebraId(l.causaQuebraId ? String(l.causaQuebraId) : "");
+    setObs(l.obs || "");
+    setParadas(l.paradas.map((p: any) => ({
+      tempoMinutos: p.tempoMinutos,
+      motivo: p.motivo || "",
+      motivoParadaId: p.motivoParadaId
+    })));
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    toast.info("Lançamento carregado para edição no formulário!");
   };
 
   const handleSaveRepuxador = async () => {
@@ -1005,9 +1120,32 @@ export default function LancamentoRepuxados() {
         <div className="lg:col-span-5 space-y-6">
           <Card className="border border-border/80 shadow-md">
             <CardHeader className="bg-slate-50/50 border-b">
-              <CardTitle className="text-lg flex items-center gap-2">
-                <FileText className="h-5 w-5 text-indigo-500" />
-                Registrar Lote de Produção
+              <CardTitle className="text-lg flex items-center justify-between w-full">
+                <div className="flex items-center gap-2">
+                  <FileText className="h-5 w-5 text-indigo-500" />
+                  {editingId ? "Editar Lançamento" : "Registrar Lote de Produção"}
+                </div>
+                {editingId && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-7 text-xs border-indigo-200 text-indigo-600 hover:bg-indigo-50"
+                    onClick={() => {
+                      setEditingId(null);
+                      setProductId("");
+                      setPecasProduzidas("");
+                      setPecasQuebradas("0");
+                      setCausaQuebraId("");
+                      setObs("");
+                      setParadas([]);
+                      setProductSearch("");
+                      toast.info("Edição cancelada. Formulário limpo.");
+                    }}
+                  >
+                    Cancelar Edição
+                  </Button>
+                )}
               </CardTitle>
             </CardHeader>
             <CardContent className="p-6">
@@ -1237,7 +1375,10 @@ export default function LancamentoRepuxados() {
                 {/* Turno e Operador (Lado a Lado na mesma linha, Turno Primeiro) */}
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label>Turno *</Label>
+                    <Label className="flex items-center">
+                      <span>Turno *</span>
+                      <HelpTooltip content="Turno de trabalho operacional no qual a produção deste lote foi realizada." />
+                    </Label>
                     <Select value={turno} onValueChange={setTurno}>
                       <SelectTrigger className="w-full">
                         <SelectValue />
@@ -1252,7 +1393,10 @@ export default function LancamentoRepuxados() {
 
                   <div className="space-y-2">
                     <Label className="flex justify-between items-center">
-                      <span>Operador *</span>
+                      <span className="flex items-center">
+                        Operador *
+                        <HelpTooltip content="Operador responsável pelo comando da máquina de repuxo durante a fabricação deste lote." />
+                      </span>
                       <button 
                         type="button" 
                         onClick={() => setShowRepuxadorModal(true)}
@@ -1342,7 +1486,10 @@ export default function LancamentoRepuxados() {
                     /* Digitação Manual */
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-2">
-                        <Label>Hora Início *</Label>
+                        <Label className="flex items-center">
+                          <span>Hora Início *</span>
+                          <HelpTooltip content="Horário inicial em que o operador começou a repuxar este lote de peças." />
+                        </Label>
                         <Input 
                           type="time" 
                           value={horaInicio} 
@@ -1351,7 +1498,10 @@ export default function LancamentoRepuxados() {
                         />
                       </div>
                       <div className="space-y-2">
-                        <Label>Hora Fim *</Label>
+                        <Label className="flex items-center">
+                          <span>Hora Fim *</span>
+                          <HelpTooltip content="Horário de encerramento da produção deste lote." />
+                        </Label>
                         <Input 
                           type="time" 
                           value={horaFim} 
@@ -1366,7 +1516,10 @@ export default function LancamentoRepuxados() {
                 {/* Produção e Quebra */}
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label>Peças Produzidas *</Label>
+                    <Label className="flex items-center">
+                      <span>Peças Produzidas *</span>
+                      <HelpTooltip content="Quantidade total de peças físicas processadas/repuxadas no lote (incluindo as quebras e perdas)." />
+                    </Label>
                     <Input 
                       type="number" 
                       placeholder="ex: 350" 
@@ -1375,7 +1528,10 @@ export default function LancamentoRepuxados() {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label>Peças Quebradas</Label>
+                    <Label className="flex items-center">
+                      <span>Peças Quebradas</span>
+                      <HelpTooltip content="Quantidade de peças que apresentaram defeitos, racharam ou quebraram durante o processo de repuxo." />
+                    </Label>
                     <Input 
                       type="number" 
                       placeholder="0" 
@@ -1389,7 +1545,10 @@ export default function LancamentoRepuxados() {
                 {Number(pecasQuebradas) > 0 && (
                   <div className="space-y-2 border border-red-100 bg-red-50/20 p-3 rounded-md">
                     <Label className="flex justify-between items-center text-red-700">
-                      <span>Causa da Quebra *</span>
+                      <span className="flex items-center">
+                        Causa da Quebra *
+                        <HelpTooltip content="Selecione o motivo principal do desperdício para fins de análise no gráfico de Pareto." />
+                      </span>
                       <button 
                         type="button" 
                         onClick={() => setShowCausaModal(true)}
@@ -1414,7 +1573,10 @@ export default function LancamentoRepuxados() {
                 {/* Paradas de Máquina (Acordion/Seção) */}
                 <div className="border rounded-md p-3 space-y-2 bg-slate-50/30">
                   <div className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex justify-between items-center">
-                    <span>Paradas de Máquina</span>
+                    <span className="flex items-center">
+                      Paradas de Máquina
+                      <HelpTooltip content="Registre os minutos e motivos das paradas de máquina ocorridas durante o lote. Essas paradas impactam o cálculo de Disponibilidade no OEE." />
+                    </span>
                     <span className="text-[10px] text-indigo-600 font-semibold">{tempoParadasTotal} min no total</span>
                   </div>
 
@@ -1438,20 +1600,20 @@ export default function LancamentoRepuxados() {
                   )}
 
                   {/* Add Parada inline com Causa/Motivo Selecionável e Modal de Cadastro */}
-                  <div className="grid grid-cols-12 gap-1.5 items-end">
-                    <div className="col-span-3">
+                  <div className="flex gap-2 items-end">
+                    <div className="w-20 shrink-0">
                       <Label className="text-[10px] text-muted-foreground text-center block">Minutos</Label>
                       <Input 
                         type="number" 
                         placeholder="min" 
                         value={tempParadaMin}
                         onChange={(e) => setTempParadaMin(e.target.value)}
-                        className="h-8 text-xs px-1 text-center"
+                        className="h-8 text-xs px-1 text-center font-semibold"
                       />
                     </div>
                     
-                    <div className="col-span-7">
-                      <Label className="text-[10px] text-muted-foreground flex justify-between items-center">
+                    <div className="flex-1 min-w-0">
+                      <Label className="text-[10px] text-muted-foreground flex justify-between items-center mb-1">
                         <span>Causa/Motivo *</span>
                         <button
                           type="button"
@@ -1466,7 +1628,7 @@ export default function LancamentoRepuxados() {
                       </Label>
                       
                       <Select value={tempParadaCausaId} onValueChange={setTempParadaCausaId}>
-                        <SelectTrigger className="h-8 text-xs">
+                        <SelectTrigger className="h-8 text-xs w-full">
                           <SelectValue placeholder="Selecione..." />
                         </SelectTrigger>
                         <SelectContent>
@@ -1477,12 +1639,12 @@ export default function LancamentoRepuxados() {
                       </Select>
                     </div>
                     
-                    <div className="col-span-2">
+                    <div className="w-16 shrink-0">
                       <Button 
                         type="button" 
                         variant="secondary" 
                         onClick={handleAddParada}
-                        className="h-8 w-full text-xs px-1"
+                        className="h-8 w-full text-xs px-1 font-semibold"
                       >
                         Add
                       </Button>
@@ -1528,10 +1690,18 @@ export default function LancamentoRepuxados() {
 
                 <Button 
                   type="submit" 
-                  className="w-full bg-indigo-600 hover:bg-indigo-700" 
-                  disabled={createLancamento.isPending}
+                  className={cn(
+                    "w-full font-semibold transition-all",
+                    editingId 
+                      ? "bg-amber-600 hover:bg-amber-700 text-white" 
+                      : "bg-indigo-600 hover:bg-indigo-700 text-white"
+                  )}
+                  disabled={createLancamento.isPending || updateLancamento.isPending}
                 >
-                  {createLancamento.isPending ? "Salvando..." : "Salvar Lançamento"}
+                  {editingId 
+                    ? (updateLancamento.isPending ? "Atualizando..." : "Atualizar Lançamento") 
+                    : (createLancamento.isPending ? "Salvando..." : "Salvar Lançamento")
+                  }
                 </Button>
               </form>
             </CardContent>
@@ -1557,17 +1727,65 @@ export default function LancamentoRepuxados() {
                   <Table>
                     <TableHeader className="bg-slate-100/50">
                       <TableRow>
-                        <TableHead>Operador / Turno</TableHead>
-                        <TableHead>Produto</TableHead>
-                        <TableHead>Horário</TableHead>
-                        <TableHead className="text-right">Produzidas (kg)</TableHead>
-                        <TableHead className="text-right">Quebras (%)</TableHead>
-                        <TableHead className="text-center">Paradas</TableHead>
-                        <TableHead className="w-12"></TableHead>
+                        <TableHead 
+                          className="cursor-pointer hover:bg-slate-200/50 transition-colors select-none"
+                          onClick={() => handleSort("repuxadorNome")}
+                        >
+                          <div className="flex items-center gap-1">
+                            Operador / Turno
+                            <ArrowUpDown size={12} className={cn("text-muted-foreground/60", sortField === "repuxadorNome" && "text-indigo-600 font-bold")} />
+                          </div>
+                        </TableHead>
+                        <TableHead 
+                          className="cursor-pointer hover:bg-slate-200/50 transition-colors select-none"
+                          onClick={() => handleSort("productCode")}
+                        >
+                          <div className="flex items-center gap-1">
+                            Produto
+                            <ArrowUpDown size={12} className={cn("text-muted-foreground/60", sortField === "productCode" && "text-indigo-600 font-bold")} />
+                          </div>
+                        </TableHead>
+                        <TableHead 
+                          className="cursor-pointer hover:bg-slate-200/50 transition-colors select-none"
+                          onClick={() => handleSort("horaInicio")}
+                        >
+                          <div className="flex items-center gap-1">
+                            Horário
+                            <ArrowUpDown size={12} className={cn("text-muted-foreground/60", sortField === "horaInicio" && "text-indigo-600 font-bold")} />
+                          </div>
+                        </TableHead>
+                        <TableHead 
+                          className="cursor-pointer hover:bg-slate-200/50 transition-colors select-none text-right"
+                          onClick={() => handleSort("pesoKg")}
+                        >
+                          <div className="flex items-center justify-end gap-1">
+                            Produzidas (kg)
+                            <ArrowUpDown size={12} className={cn("text-muted-foreground/60", sortField === "pesoKg" && "text-indigo-600 font-bold")} />
+                          </div>
+                        </TableHead>
+                        <TableHead 
+                          className="cursor-pointer hover:bg-slate-200/50 transition-colors select-none text-right"
+                          onClick={() => handleSort("pecasQuebradasPct")}
+                        >
+                          <div className="flex items-center justify-end gap-1">
+                            Quebras (%)
+                            <ArrowUpDown size={12} className={cn("text-muted-foreground/60", sortField === "pecasQuebradasPct" && "text-indigo-600 font-bold")} />
+                          </div>
+                        </TableHead>
+                        <TableHead 
+                          className="cursor-pointer hover:bg-slate-200/50 transition-colors select-none text-center"
+                          onClick={() => handleSort("tempoParadas")}
+                        >
+                          <div className="flex items-center justify-center gap-1">
+                            Paradas
+                            <ArrowUpDown size={12} className={cn("text-muted-foreground/60", sortField === "tempoParadas" && "text-indigo-600 font-bold")} />
+                          </div>
+                        </TableHead>
+                        <TableHead className="w-20 text-center">Ações</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {lancamentosQuery.data.map((l) => {
+                      {sortedLancamentos.map((l) => {
                         const peso = Number(l.pesoUnitarioG || 0);
                         const kgProd = (l.pecasProduzidas * peso) / 1000;
                         const kgQueb = (l.pecasQuebradas * peso) / 1000;
@@ -1581,8 +1799,27 @@ export default function LancamentoRepuxados() {
                         return (
                           <TableRow key={l.id}>
                             <TableCell>
-                              <div className="font-semibold text-sm">{l.repuxadorNome}</div>
-                              <div className="text-xs text-muted-foreground">{l.turno}</div>
+                              <div className="flex flex-col gap-1">
+                                <div className="flex items-center gap-1.5">
+                                  <span 
+                                    className="h-2.5 w-2.5 rounded-full border border-slate-200 shrink-0" 
+                                    style={{ backgroundColor: l.repuxadorCor || "#6366f1" }} 
+                                  />
+                                  <span className="font-semibold text-sm text-slate-800">{l.repuxadorNome}</span>
+                                </div>
+                                <div className="flex items-center gap-1.5 pl-4">
+                                  <Badge 
+                                    variant="outline" 
+                                    style={{ 
+                                      borderColor: l.turnoCor || "#64748b", 
+                                      color: l.turnoCor || "#64748b" 
+                                    }}
+                                    className="text-[9px] font-bold px-1.5 py-0 bg-white"
+                                  >
+                                    {l.turno}
+                                  </Badge>
+                                </div>
+                              </div>
                             </TableCell>
                             <TableCell>
                               <div className="font-mono font-semibold text-sm">{l.productCode}</div>
@@ -1606,22 +1843,41 @@ export default function LancamentoRepuxados() {
                             </TableCell>
                             <TableCell className="text-center">
                               {tempoParadas > 0 ? (
-                                <span className="inline-flex items-center rounded-md bg-amber-50 px-2 py-1 text-xs font-medium text-amber-800 ring-1 ring-inset ring-amber-600/20">
-                                  {tempoParadas}m
-                                </span>
+                                <div className="flex flex-col items-center gap-0.5">
+                                  <span className="inline-flex items-center rounded-md bg-amber-50 px-2 py-1 text-xs font-medium text-amber-800 ring-1 ring-inset ring-amber-600/20">
+                                    {tempoParadas}m
+                                  </span>
+                                  {l.paradas && l.paradas.length > 0 && (
+                                    <div className="text-[10px] text-amber-600 font-semibold uppercase max-w-[120px] truncate" title={l.paradas.map((p: any) => p.causaDescricao || p.motivo).filter(Boolean).join(", ")}>
+                                      {l.paradas.map((p: any) => p.causaDescricao || p.motivo).filter(Boolean).join(", ")}
+                                    </div>
+                                  )}
+                                </div>
                               ) : (
                                 <span className="text-muted-foreground text-xs">-</span>
                               )}
                             </TableCell>
                             <TableCell>
-                              <Button 
-                                size="icon" 
-                                variant="ghost" 
-                                className="text-red-500 hover:text-red-700 hover:bg-red-50"
-                                onClick={() => handleDeletarLancamento(l.id)}
-                              >
-                                <Trash2 size={16} />
-                              </Button>
+                              <div className="flex items-center justify-center gap-1">
+                                <Button 
+                                  size="icon" 
+                                  variant="ghost" 
+                                  className="h-8 w-8 text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50"
+                                  onClick={() => handleEditarClick(l)}
+                                  title="Editar lançamento"
+                                >
+                                  <Pencil size={14} />
+                                </Button>
+                                <Button 
+                                  size="icon" 
+                                  variant="ghost" 
+                                  className="h-8 w-8 text-red-500 hover:text-red-700 hover:bg-red-50"
+                                  onClick={() => handleDeletarLancamento(l.id)}
+                                  title="Excluir lançamento"
+                                >
+                                  <Trash2 size={14} />
+                                </Button>
+                              </div>
                             </TableCell>
                           </TableRow>
                         );

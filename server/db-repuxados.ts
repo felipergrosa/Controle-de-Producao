@@ -1,5 +1,6 @@
 import { sql, eq, and, desc, or, gte, lte } from "drizzle-orm";
 import { getDb } from "./db";
+import crypto from "crypto";
 import { 
   repuxadores, 
   causasQuebra, 
@@ -9,13 +10,15 @@ import {
   metasRepuxo,
   products,
   users,
+  turnos,
   Product,
   Repuxador,
   CausaQuebra,
   MotivoParada,
   ProducaoRepuxado,
   ParadaMaquina,
-  MetaRepuxo
+  MetaRepuxo,
+  Turno
 } from "../drizzle/schema";
 
 // Helper para converter TIME (HH:MM ou HH:MM:SS) em minutos desde a meia-noite
@@ -43,7 +46,7 @@ export async function getRepuxadorById(id: number): Promise<Repuxador | undefine
   return result.length > 0 ? result[0] : undefined;
 }
 
-export async function createRepuxador(nome: string, matricula?: string, turnoPadrao?: string): Promise<Repuxador> {
+export async function createRepuxador(nome: string, matricula?: string, turnoPadrao?: string, cor?: string, codigo?: string): Promise<Repuxador> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   
@@ -51,6 +54,8 @@ export async function createRepuxador(nome: string, matricula?: string, turnoPad
     nome,
     matricula: matricula || null,
     turnoPadrao: turnoPadrao || null,
+    cor: cor || "#6366f1",
+    codigo: codigo || "",
     ativo: true,
   });
   
@@ -93,12 +98,14 @@ export async function getCausaQuebraById(id: number): Promise<CausaQuebra | unde
   return result.length > 0 ? result[0] : undefined;
 }
 
-export async function createCausaQuebra(descricao: string): Promise<CausaQuebra> {
+export async function createCausaQuebra(descricao: string, cor?: string, codigo?: string): Promise<CausaQuebra> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   
   const [result] = await db.insert(causasQuebra).values({
     descricao,
+    cor: cor || "#ef4444",
+    codigo: codigo || "",
     ativo: true,
   });
   
@@ -141,12 +148,14 @@ export async function getMotivoParadaById(id: number): Promise<MotivoParada | un
   return result.length > 0 ? result[0] : undefined;
 }
 
-export async function createMotivoParada(descricao: string): Promise<MotivoParada> {
+export async function createMotivoParada(descricao: string, cor?: string, codigo?: string): Promise<MotivoParada> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   
   const [result] = await db.insert(motivosParada).values({
     descricao,
+    cor: cor || "#f59e0b",
+    codigo: codigo || "",
     ativo: true,
   });
   
@@ -260,8 +269,11 @@ export async function getProducaoRepuxados(startDate: Date, endDate: Date): Prom
       metaQuebraPct: products.metaQuebraPct,
       repuxadorId: producaoRepuxados.repuxadorId,
       repuxadorNome: repuxadores.nome,
+      repuxadorCor: repuxadores.cor,
+      repuxadorCodigo: repuxadores.codigo,
       dataProducao: producaoRepuxados.dataProducao,
       turno: producaoRepuxados.turno,
+      turnoCor: turnos.cor,
       horaInicio: producaoRepuxados.horaInicio,
       horaFim: producaoRepuxados.horaFim,
       pecasProduzidas: producaoRepuxados.pecasProduzidas,
@@ -278,6 +290,7 @@ export async function getProducaoRepuxados(startDate: Date, endDate: Date): Prom
     .innerJoin(repuxadores, eq(producaoRepuxados.repuxadorId, repuxadores.id))
     .leftJoin(causasQuebra, eq(producaoRepuxados.causaQuebraId, causasQuebra.id))
     .leftJoin(users, eq(producaoRepuxados.createdBy, users.id))
+    .leftJoin(turnos, eq(producaoRepuxados.turno, turnos.codigo))
     .where(
       and(
         gte(producaoRepuxados.dataProducao, startStr as any),
@@ -320,8 +333,34 @@ export async function deleteProducaoRepuxado(id: string): Promise<void> {
 // ==========================================
 // ESTATÍSTICAS / OEE / METAS / RANKING
 // ==========================================
-export async function getDashboardStats(startDate: Date, endDate: Date): Promise<any> {
-  const data = await getProducaoRepuxados(startDate, endDate);
+export async function getDashboardStats(
+  startDate: Date, 
+  endDate: Date,
+  filters?: {
+    repuxadorId?: number | null;
+    turno?: string | null;
+    causaQuebraId?: number | null;
+    motivoParadaId?: number | null;
+    sortBy?: string | null;
+  }
+): Promise<any> {
+  let data = await getProducaoRepuxados(startDate, endDate);
+
+  // Filtragem local dos dados para o Dashboard
+  if (filters) {
+    if (filters.repuxadorId !== undefined && filters.repuxadorId !== null) {
+      data = data.filter(row => row.repuxadorId === filters.repuxadorId);
+    }
+    if (filters.turno) {
+      data = data.filter(row => row.turno === filters.turno);
+    }
+    if (filters.causaQuebraId !== undefined && filters.causaQuebraId !== null) {
+      data = data.filter(row => row.causaQuebraId === filters.causaQuebraId);
+    }
+    if (filters.motivoParadaId !== undefined && filters.motivoParadaId !== null) {
+      data = data.filter(row => row.paradas.some((p: any) => p.motivoParadaId === filters.motivoParadaId));
+    }
+  }
   
   let totalPecasProduzidas = 0;
   let totalPecasQuebradas = 0;
@@ -492,7 +531,20 @@ export async function getDashboardStats(startDate: Date, endDate: Date): Promise
       quebraPct: Number(quebra.toFixed(2)),
       oeeMedio: Number(oeeMedio.toFixed(1)),
     };
-  }).sort((a, b) => b.totalKg - a.totalKg);
+  });
+
+  if (filters?.sortBy === "producao_asc") {
+    listRanking.sort((a, b) => a.totalKg - b.totalKg);
+  } else if (filters?.sortBy === "oee_desc") {
+    listRanking.sort((a, b) => b.oeeMedio - a.oeeMedio);
+  } else if (filters?.sortBy === "quebra_desc") {
+    listRanking.sort((a, b) => b.quebraPct - a.quebraPct);
+  } else if (filters?.sortBy === "quebra_asc") {
+    listRanking.sort((a, b) => a.quebraPct - b.quebraPct);
+  } else {
+    // Padrão: producao_desc
+    listRanking.sort((a, b) => b.totalKg - a.totalKg);
+  }
 
   // Evolução Diária
   const diario: Record<string, { data: string, pecas: number, quebra: number, kg: number, quebraPct: number }> = {};
@@ -530,6 +582,7 @@ export async function getDashboardStats(startDate: Date, endDate: Date): Promise
     evolucaoDiaria,
     totalTempoProducaoMinutos,
     totalTempoParadasMinutos,
+    totalLancamentos: data.length,
   };
 }
 
@@ -584,4 +637,113 @@ export async function getMotivosParadaFrequentes(): Promise<string[]> {
     .filter((m): m is string => !!m);
     
   return Array.from(new Set(motivos)).slice(0, 15);
+}
+
+// ==========================================
+// CRUD TURNOS
+// ==========================================
+export async function getAllTurnos(): Promise<Turno[]> {
+  const db = await getDb();
+  if (!db) return [];
+  return await db.select().from(turnos).orderBy(desc(turnos.ativo), turnos.descricao);
+}
+
+export async function getTurnoById(id: number): Promise<Turno | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(turnos).where(eq(turnos.id, id)).limit(1);
+  return result.length > 0 ? result[0] : undefined;
+}
+
+export async function createTurno(codigo: string, descricao: string, cor?: string): Promise<Turno> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  const [result] = await db.insert(turnos).values({
+    codigo,
+    descricao,
+    cor: cor || "#6366f1",
+    ativo: true,
+  });
+  
+  const newId = result.insertId;
+  const created = await getTurnoById(newId);
+  if (!created) throw new Error("Erro ao criar turno");
+  return created;
+}
+
+export async function updateTurno(id: number, updates: Partial<Omit<Turno, "id" | "createdAt">>): Promise<Turno> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  await db.update(turnos).set(updates).where(eq(turnos.id, id));
+  const updated = await getTurnoById(id);
+  if (!updated) throw new Error("Turno não encontrado");
+  return updated;
+}
+
+export async function deleteTurno(id: number): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(turnos).set({ ativo: false }).where(eq(turnos.id, id));
+}
+
+// ==========================================
+// UPDATE DE LANÇAMENTO DE PRODUÇÃO
+// ==========================================
+export async function updateProducaoRepuxado(
+  id: string,
+  data: {
+    productId: string;
+    repuxadorId: number;
+    dataProducao: string;
+    turno: string;
+    horaInicio: string;
+    horaFim: string;
+    pecasProduzidas: number;
+    pecasQuebradas: number;
+    causaQuebraId?: number | null;
+    obs?: string | null;
+    paradas?: { tempoMinutos: number; motivo?: string | null; motivoParadaId?: number | null }[];
+  }
+): Promise<ProducaoRepuxado> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const formattedDate = data.dataProducao.split("T")[0];
+
+  // Atualizar o lançamento principal
+  await db.update(producaoRepuxados).set({
+    productId: data.productId,
+    repuxadorId: data.repuxadorId,
+    dataProducao: formattedDate as any,
+    turno: data.turno,
+    horaInicio: data.horaInicio,
+    horaFim: data.horaFim,
+    pecasProduzidas: data.pecasProduzidas,
+    pecasQuebradas: data.pecasQuebradas,
+    causaQuebraId: data.causaQuebraId ?? null,
+    obs: data.obs ?? null,
+  }).where(eq(producaoRepuxados.id, id));
+
+  // Remover as paradas antigas
+  await db.delete(paradasMaquina).where(eq(paradasMaquina.producaoRepuxadosId, id));
+
+  // Inserir as novas paradas
+  if (data.paradas && data.paradas.length > 0) {
+    for (const p of data.paradas) {
+      await db.insert(paradasMaquina).values({
+        id: crypto.randomUUID(),
+        producaoRepuxadosId: id,
+        tempoMinutos: p.tempoMinutos,
+        motivo: p.motivo ?? null,
+        motivoParadaId: p.motivoParadaId ?? null,
+        causaQuebraId: data.causaQuebraId ?? null,
+      });
+    }
+  }
+
+  const [updated] = await db.select().from(producaoRepuxados).where(eq(producaoRepuxados.id, id)).limit(1);
+  if (!updated) throw new Error("Erro ao obter lançamento atualizado");
+  return updated;
 }

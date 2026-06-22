@@ -15,6 +15,7 @@ import Login from "./pages/Login";
 import Users from "./pages/Users";
 import LancamentoRepuxados from "./pages/LancamentoRepuxados";
 import DashboardRepuxo from "./pages/DashboardRepuxo";
+import GerenciadorCadastros from "./pages/GerenciadorCadastros";
 
 function Router() {
   return (
@@ -67,6 +68,13 @@ function Router() {
         {() => (
           <DashboardLayout>
             <DashboardRepuxo />
+          </DashboardLayout>
+        )}
+      </Route>
+      <Route path={"/repuxo/gerenciador"}>
+        {() => (
+          <DashboardLayout>
+            <GerenciadorCadastros />
           </DashboardLayout>
         )}
       </Route>
