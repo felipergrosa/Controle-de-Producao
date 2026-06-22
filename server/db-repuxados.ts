@@ -341,6 +341,7 @@ export async function getDashboardStats(
     turno?: string | null;
     causaQuebraId?: number | null;
     motivoParadaId?: number | null;
+    productId?: string | null;
     sortBy?: string | null;
   }
 ): Promise<any> {
@@ -359,6 +360,9 @@ export async function getDashboardStats(
     }
     if (filters.motivoParadaId !== undefined && filters.motivoParadaId !== null) {
       data = data.filter(row => row.paradas.some((p: any) => p.motivoParadaId === filters.motivoParadaId));
+    }
+    if (filters.productId) {
+      data = data.filter(row => row.productId === filters.productId);
     }
   }
   
@@ -459,6 +463,7 @@ export async function getDashboardStats(
   const rankingRepuxadores: Record<number, { 
     id: number; 
     nome: string; 
+    cor?: string | null;
     totalPecas: number; 
     totalQuebradas: number; 
     totalKg: number; 
@@ -478,6 +483,7 @@ export async function getDashboardStats(
       rankingRepuxadores[idRepuxador] = {
         id: idRepuxador,
         nome: row.repuxadorNome,
+        cor: row.repuxadorCor,
         totalPecas: 0,
         totalQuebradas: 0,
         totalKg: 0,
@@ -524,6 +530,7 @@ export async function getDashboardStats(
     return {
       id: rep.id,
       nome: rep.nome,
+      cor: rep.cor,
       totalPecas: rep.totalPecas,
       totalQuebradas: rep.totalQuebradas,
       totalKg: rep.totalKg,
@@ -570,6 +577,52 @@ export async function getDashboardStats(
     };
   }).sort((a, b) => a.data.localeCompare(b.data));
 
+  // Ranking de produtos mais repuxados
+  const rankingProdutos: Record<string, { 
+    id: string; 
+    code: string; 
+    description: string; 
+    totalPecas: number; 
+    totalKg: number; 
+    totalQuebradas: number; 
+    quebraPct: number; 
+  }> = {};
+
+  for (const row of data) {
+    const prodId = row.productId;
+    const code = row.productCode || "Sem código";
+    const desc = row.productDescription || "Sem descrição";
+    const pesoG = Number(row.pesoUnitarioG || 0);
+    const kgProd = (row.pecasProduzidas * pesoG) / 1000;
+
+    if (!rankingProdutos[prodId]) {
+      rankingProdutos[prodId] = {
+        id: prodId,
+        code,
+        description: desc,
+        totalPecas: 0,
+        totalKg: 0,
+        totalQuebradas: 0,
+        quebraPct: 0
+      };
+    }
+    rankingProdutos[prodId].totalPecas += row.pecasProduzidas;
+    rankingProdutos[prodId].totalKg += kgProd;
+    rankingProdutos[prodId].totalQuebradas += row.pecasQuebradas;
+  }
+
+  const listProdutos = Object.values(rankingProdutos).map(p => {
+    const qPct = p.totalPecas > 0 ? (p.totalQuebradas / p.totalPecas) * 100 : 0;
+    return {
+      id: p.id,
+      code: p.code,
+      description: p.description,
+      totalKg: Number(p.totalKg.toFixed(2)),
+      totalPecas: p.totalPecas,
+      quebraPct: Number(qPct.toFixed(2))
+    };
+  }).sort((a, b) => b.totalKg - a.totalKg);
+
   return {
     totalPecasProduzidas,
     totalPecasQuebradas,
@@ -579,6 +632,7 @@ export async function getDashboardStats(
     oeeGeral,
     paretoCausas,
     rankingRepuxadores: listRanking,
+    rankingProdutos: listProdutos,
     evolucaoDiaria,
     totalTempoProducaoMinutos,
     totalTempoParadasMinutos,

@@ -71,13 +71,17 @@ export default function DashboardRepuxo() {
   const [turno, setTurno] = useState<string | undefined>(undefined);
   const [causaQuebraId, setCausaQuebraId] = useState<number | undefined>(undefined);
   const [motivoParadaId, setMotivoParadaId] = useState<number | undefined>(undefined);
+  const [productId, setProductId] = useState<string | undefined>(undefined);
   const [sortBy, setSortBy] = useState<string | undefined>(undefined);
 
   // Estados temporários para o modal de filtros
+  const [tempStartDateStr, setTempStartDateStr] = useState(startDateStr);
+  const [tempEndDateStr, setTempEndDateStr] = useState(endDateStr);
   const [tempRepuxadorId, setTempRepuxadorId] = useState<string>("todos");
   const [tempTurno, setTempTurno] = useState<string>("todos");
   const [tempCausaQuebraId, setTempCausaQuebraId] = useState<string>("todos");
   const [tempMotivoParadaId, setTempMotivoParadaId] = useState<string>("todos");
+  const [tempProductId, setTempProductId] = useState<string>("todos");
   const [tempSortBy, setTempSortBy] = useState<string>("producao_desc");
 
   // Estado para controlar abertura do modal
@@ -88,6 +92,7 @@ export default function DashboardRepuxo() {
   const turnosQuery = trpc.turnos.list.useQuery();
   const causasQuery = trpc.causasQuebra.list.useQuery();
   const motivosParadaQuery = trpc.motivosParada.list.useQuery();
+  const produtosQuery = trpc.products.list.useQuery();
 
   // Query de Estatísticas Gerais com Filtros Aplicados
   const statsQuery = trpc.repuxados.getStats.useQuery({
@@ -97,6 +102,7 @@ export default function DashboardRepuxo() {
     turno: turno ?? null,
     causaQuebraId: causaQuebraId ?? null,
     motivoParadaId: motivoParadaId ?? null,
+    productId: productId ?? null,
     sortBy: sortBy ?? null,
   }, {
     staleTime: 30000 // Cache 30 segundos
@@ -104,37 +110,80 @@ export default function DashboardRepuxo() {
 
   const stats = statsQuery.data;
 
-  const hasActiveFilters = repuxadorId !== undefined || turno !== undefined || causaQuebraId !== undefined || motivoParadaId !== undefined || (sortBy !== undefined && sortBy !== "producao_desc");
+  const hasActiveFilters = repuxadorId !== undefined || turno !== undefined || causaQuebraId !== undefined || motivoParadaId !== undefined || productId !== undefined || (sortBy !== undefined && sortBy !== "producao_desc");
+
+  const activePeriod = useMemo(() => {
+    const todayStr = format(today, "yyyy-MM-dd");
+    const past30DaysStr = format(subDays(today, 30), "yyyy-MM-dd");
+    
+    if (startDateStr === past30DaysStr && endDateStr === todayStr) {
+      return "30dias";
+    }
+    if (startDateStr === "2024-01-01" && endDateStr === "2024-12-31") {
+      return "2024";
+    }
+    if (startDateStr === "2025-01-01" && endDateStr === "2025-12-31") {
+      return "2025";
+    }
+    if (startDateStr === "2026-01-01" && endDateStr === todayStr) {
+      return "2026";
+    }
+    if (startDateStr === "2024-01-01" && endDateStr === todayStr) {
+      return "tudo";
+    }
+    return "custom";
+  }, [startDateStr, endDateStr, today]);
+
+  const getShortcutClass = (period: string) => {
+    return activePeriod === period
+      ? "h-8 text-xs bg-indigo-600 border-indigo-600 text-white hover:bg-indigo-700 hover:text-white font-semibold shadow-sm"
+      : "h-8 text-xs text-slate-600 hover:text-slate-800 bg-background hover:bg-slate-50 border-slate-200";
+  };
 
   const handleOpenFilters = () => {
+    setTempStartDateStr(startDateStr);
+    setTempEndDateStr(endDateStr);
     setTempRepuxadorId(repuxadorId !== undefined ? String(repuxadorId) : "todos");
     setTempTurno(turno || "todos");
     setTempCausaQuebraId(causaQuebraId !== undefined ? String(causaQuebraId) : "todos");
     setTempMotivoParadaId(motivoParadaId !== undefined ? String(motivoParadaId) : "todos");
+    setTempProductId(productId || "todos");
     setTempSortBy(sortBy || "producao_desc");
     setIsFilterModalOpen(true);
   };
 
   const handleApplyFilters = () => {
+    setStartDateStr(tempStartDateStr);
+    setEndDateStr(tempEndDateStr);
     setRepuxadorId(tempRepuxadorId === "todos" ? undefined : Number(tempRepuxadorId));
     setTurno(tempTurno === "todos" ? undefined : tempTurno);
     setCausaQuebraId(tempCausaQuebraId === "todos" ? undefined : Number(tempCausaQuebraId));
     setMotivoParadaId(tempMotivoParadaId === "todos" ? undefined : Number(tempMotivoParadaId));
+    setProductId(tempProductId === "todos" ? undefined : tempProductId);
     setSortBy(tempSortBy);
     setIsFilterModalOpen(false);
   };
 
   const handleClearFilters = () => {
+    const defaultStart = format(subDays(today, 30), "yyyy-MM-dd");
+    const defaultEnd = format(today, "yyyy-MM-dd");
+    setStartDateStr(defaultStart);
+    setEndDateStr(defaultEnd);
+    setTempStartDateStr(defaultStart);
+    setTempEndDateStr(defaultEnd);
+
     setRepuxadorId(undefined);
     setTurno(undefined);
     setCausaQuebraId(undefined);
     setMotivoParadaId(undefined);
+    setProductId(undefined);
     setSortBy(undefined);
     
     setTempRepuxadorId("todos");
     setTempTurno("todos");
     setTempCausaQuebraId("todos");
     setTempMotivoParadaId("todos");
+    setTempProductId("todos");
     setTempSortBy("producao_desc");
     
     setIsFilterModalOpen(false);
@@ -197,7 +246,7 @@ export default function DashboardRepuxo() {
             <Button
               variant="outline"
               size="sm"
-              className="h-8 text-xs"
+              className={getShortcutClass("30dias")}
               onClick={() => {
                 setStartDateStr(format(subDays(today, 30), "yyyy-MM-dd"));
                 setEndDateStr(format(today, "yyyy-MM-dd"));
@@ -208,7 +257,7 @@ export default function DashboardRepuxo() {
             <Button
               variant="outline"
               size="sm"
-              className="h-8 text-xs"
+              className={getShortcutClass("2024")}
               onClick={() => {
                 setStartDateStr("2024-01-01");
                 setEndDateStr("2024-12-31");
@@ -219,7 +268,7 @@ export default function DashboardRepuxo() {
             <Button
               variant="outline"
               size="sm"
-              className="h-8 text-xs"
+              className={getShortcutClass("2025")}
               onClick={() => {
                 setStartDateStr("2025-01-01");
                 setEndDateStr("2025-12-31");
@@ -230,7 +279,7 @@ export default function DashboardRepuxo() {
             <Button
               variant="outline"
               size="sm"
-              className="h-8 text-xs"
+              className={getShortcutClass("2026")}
               onClick={() => {
                 setStartDateStr("2026-01-01");
                 setEndDateStr(format(today, "yyyy-MM-dd"));
@@ -241,7 +290,7 @@ export default function DashboardRepuxo() {
             <Button
               variant="outline"
               size="sm"
-              className="h-8 text-xs bg-indigo-50 border-indigo-200 text-indigo-700 hover:bg-indigo-100"
+              className={getShortcutClass("tudo")}
               onClick={() => {
                 setStartDateStr("2024-01-01");
                 setEndDateStr(format(today, "yyyy-MM-dd"));
@@ -251,30 +300,13 @@ export default function DashboardRepuxo() {
             </Button>
           </div>
 
-          <div className="flex items-center gap-2 bg-background border rounded-lg p-2 shadow-sm h-8 md:h-12">
-            <Calendar className="h-4 w-4 text-muted-foreground animate-pulse" />
-            <Input 
-              type="date" 
-              value={startDateStr} 
-              onChange={(e) => setStartDateStr(e.target.value)}
-              className="border-0 shadow-none h-8 w-36 focus-visible:ring-0 cursor-pointer text-xs font-medium"
-            />
-            <span className="text-muted-foreground text-xs font-semibold">até</span>
-            <Input 
-              type="date" 
-              value={endDateStr} 
-              onChange={(e) => setEndDateStr(e.target.value)}
-              className="border-0 shadow-none h-8 w-36 focus-visible:ring-0 cursor-pointer text-xs font-medium"
-            />
-          </div>
-
           {/* Botão de Filtros Avançados */}
           <Dialog open={isFilterModalOpen} onOpenChange={setIsFilterModalOpen}>
             <Button
               variant="outline"
               size="sm"
               onClick={handleOpenFilters}
-              className="h-8 md:h-12 gap-2 text-slate-700 bg-background border shadow-sm font-semibold hover:bg-slate-50 flex items-center px-4"
+              className="h-8 md:h-8 gap-2 text-slate-700 bg-background border border-slate-200 shadow-sm font-semibold hover:bg-slate-50 flex items-center px-4"
             >
               <SlidersHorizontal size={14} className="text-indigo-500" />
               <span className="text-xs">Filtros Avançados</span>
@@ -292,6 +324,36 @@ export default function DashboardRepuxo() {
               </DialogHeader>
 
               <div className="grid gap-4 py-4">
+                {/* Período de Análise (Range de Datas) */}
+                <div className="grid gap-2 border-b pb-4">
+                  <Label className="text-xs font-semibold text-slate-600 flex items-center gap-1.5 mb-1">
+                    <Calendar size={14} className="text-indigo-500 animate-pulse" />
+                    Período de Análise
+                  </Label>
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1">
+                      <Label htmlFor="date-start" className="text-[10px] text-slate-400 block mb-0.5">Data Início</Label>
+                      <Input 
+                        id="date-start"
+                        type="date" 
+                        value={tempStartDateStr} 
+                        onChange={(e) => setTempStartDateStr(e.target.value)}
+                        className="h-9 text-xs cursor-pointer focus-visible:ring-indigo-500"
+                      />
+                    </div>
+                    <span className="text-slate-400 text-xs mt-4 font-medium">até</span>
+                    <div className="flex-1">
+                      <Label htmlFor="date-end" className="text-[10px] text-slate-400 block mb-0.5">Data Fim</Label>
+                      <Input 
+                        id="date-end"
+                        type="date" 
+                        value={tempEndDateStr} 
+                        onChange={(e) => setTempEndDateStr(e.target.value)}
+                        className="h-9 text-xs cursor-pointer focus-visible:ring-indigo-500"
+                      />
+                    </div>
+                  </div>
+                </div>
                 {/* Operador */}
                 <div className="grid gap-2">
                   <Label htmlFor="operador" className="text-xs font-semibold text-slate-600">Operador / Repuxador</Label>
@@ -364,6 +426,24 @@ export default function DashboardRepuxo() {
                   </Select>
                 </div>
 
+                {/* Produto */}
+                <div className="grid gap-2">
+                  <Label htmlFor="produto" className="text-xs font-semibold text-slate-600">Produto</Label>
+                  <Select value={tempProductId} onValueChange={setTempProductId}>
+                    <SelectTrigger id="produto" className="w-full text-xs h-9">
+                      <SelectValue placeholder="Selecione um produto" />
+                    </SelectTrigger>
+                    <SelectContent className="max-h-56">
+                      <SelectItem value="todos" className="text-xs">Todos os produtos</SelectItem>
+                      {produtosQuery.data?.map(p => (
+                        <SelectItem key={p.id} value={p.id} className="text-xs">
+                          {p.code} - {p.description}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
                 {/* Ordenação do Ranking */}
                 <div className="grid gap-2">
                   <Label htmlFor="sortBy" className="text-xs font-semibold text-slate-600">Ordenar Ranking de Operadores por</Label>
@@ -403,9 +483,22 @@ export default function DashboardRepuxo() {
 
 
       {/* Badges de Filtros Ativos */}
-      {hasActiveFilters && (
+      {(hasActiveFilters || activePeriod === "custom") && (
         <div className="flex flex-wrap items-center gap-2 bg-slate-50/80 border border-slate-200/50 p-3 rounded-lg text-xs shadow-sm">
           <span className="font-semibold text-slate-600">Filtros ativos:</span>
+          {activePeriod === "custom" && (
+            <Badge variant="secondary" className="gap-1 bg-indigo-50 border border-indigo-200 text-indigo-700 font-semibold px-2 py-0.5 shadow-sm text-[10px]">
+              Período: {format(new Date(startDateStr + "T00:00:00"), "dd/MM/yyyy")} até {format(new Date(endDateStr + "T00:00:00"), "dd/MM/yyyy")}
+              <button onClick={() => {
+                const defaultStart = format(subDays(today, 30), "yyyy-MM-dd");
+                const defaultEnd = format(today, "yyyy-MM-dd");
+                setStartDateStr(defaultStart);
+                setEndDateStr(defaultEnd);
+                setTempStartDateStr(defaultStart);
+                setTempEndDateStr(defaultEnd);
+              }} className="hover:text-red-500 font-bold ml-1 text-xs">×</button>
+            </Badge>
+          )}
           {repuxadorId !== undefined && (
             <Badge variant="secondary" className="gap-1 bg-white border border-slate-200 text-slate-700 font-semibold px-2 py-0.5 shadow-sm text-[10px]">
               Operador: {repuxadoresQuery.data?.find(r => r.id === repuxadorId)?.nome || repuxadorId}
@@ -428,6 +521,12 @@ export default function DashboardRepuxo() {
             <Badge variant="secondary" className="gap-1 bg-white border border-slate-200 text-slate-700 font-semibold px-2 py-0.5 shadow-sm text-[10px]">
               Motivo Parada: {motivosParadaQuery.data?.find(m => m.id === motivoParadaId)?.descricao || motivoParadaId}
               <button onClick={() => setMotivoParadaId(undefined)} className="hover:text-red-500 font-bold ml-1 text-xs">×</button>
+            </Badge>
+          )}
+          {productId !== undefined && (
+            <Badge variant="secondary" className="gap-1 bg-white border border-slate-200 text-slate-700 font-semibold px-2 py-0.5 shadow-sm text-[10px]">
+              Produto: {produtosQuery.data?.find(p => p.id === productId)?.code || productId}
+              <button onClick={() => setProductId(undefined)} className="hover:text-red-500 font-bold ml-1 text-xs">×</button>
             </Badge>
           )}
           {sortBy !== undefined && sortBy !== "producao_desc" && (
@@ -695,25 +794,29 @@ export default function DashboardRepuxo() {
                 <CardDescription>Produtividade, refugo e eficiência OEE por operador</CardDescription>
               </CardHeader>
               <CardContent className="p-0">
-                {stats.rankingRepuxadores.length === 0 ? (
-                  <div className="text-center py-20 text-muted-foreground text-sm">Nenhum registro de operador no período</div>
-                ) : (
-                  <div className="overflow-x-auto">
-                    <Table>
-                      <TableHeader className="bg-slate-50/50">
-                        <TableRow>
-                          <TableHead>Operador</TableHead>
-                          <TableHead className="text-right">Produção (kg)</TableHead>
-                          <TableHead className="text-right">Quebras (%)</TableHead>
-                          <TableHead className="text-right">OEE Médio</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {stats.rankingRepuxadores.map((r: any, index: number) => (
+              {!stats?.rankingRepuxadores || stats.rankingRepuxadores.length === 0 ? (
+                <div className="text-center py-20 text-muted-foreground text-sm">Nenhum registro de operador no período</div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader className="bg-slate-50/50">
+                      <TableRow>
+                        <TableHead>Operador</TableHead>
+                        <TableHead className="text-right">Produção (kg)</TableHead>
+                        <TableHead className="text-right">Quebras (%)</TableHead>
+                        <TableHead className="text-right">OEE Médio</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {stats?.rankingRepuxadores?.map((r: any, index: number) => (
                           <TableRow key={r.id}>
                             <TableCell className="font-semibold flex items-center gap-2">
                               <span className="text-xs text-muted-foreground font-mono">#{index + 1}</span>
-                              {r.nome}
+                              <span 
+                                className="h-2.5 w-2.5 rounded-full border border-slate-200 shrink-0" 
+                                style={{ backgroundColor: r.cor || "#6366f1" }} 
+                              />
+                              <span className="text-slate-800">{r.nome}</span>
                             </TableCell>
                             <TableCell className="text-right font-medium">{r.totalKg.toLocaleString('pt-BR')} kg</TableCell>
                             <TableCell className="text-right">
@@ -731,6 +834,62 @@ export default function DashboardRepuxo() {
               </CardContent>
             </Card>
           </div>
+
+          {/* Ranking de Produtos mais Repuxados */}
+          <Card className="border border-border/60 shadow-sm hover:shadow-md transition-shadow">
+            <CardHeader>
+              <CardTitle className="text-lg flex items-center gap-2">
+                <Award className="text-indigo-500" />
+                Produtos mais Repuxados
+                <HelpTooltip content="Classificação dos produtos por volume de produção em KG. Apresenta o código, descrição, total produzido (KG e peças) e a respectiva taxa de quebras do produto." />
+              </CardTitle>
+              <CardDescription>Visualização dos produtos com maior volume de produção e desperdício</CardDescription>
+            </CardHeader>
+            <CardContent className="p-0">
+              {!stats?.rankingProdutos || stats.rankingProdutos.length === 0 ? (
+                <div className="text-center py-20 text-muted-foreground text-sm">Nenhum registro de produto no período</div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader className="bg-slate-50/50">
+                      <TableRow>
+                        <TableHead className="w-[80px]">Rank</TableHead>
+                        <TableHead className="w-[120px]">Código</TableHead>
+                        <TableHead>Descrição</TableHead>
+                        <TableHead className="text-right">Produção (kg)</TableHead>
+                        <TableHead className="text-right">Produção (pçs)</TableHead>
+                        <TableHead className="text-right">Quebras (%)</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {stats?.rankingProdutos?.map((p: any, index: number) => (
+                        <TableRow key={p.id}>
+                          <TableCell className="font-semibold">
+                            <span className="text-xs text-muted-foreground font-mono">#{index + 1}</span>
+                          </TableCell>
+                          <TableCell className="font-mono text-xs font-semibold">{p.code}</TableCell>
+                          <TableCell className="max-w-[300px] truncate font-medium text-slate-700" title={p.description}>
+                            {p.description}
+                          </TableCell>
+                          <TableCell className="text-right font-semibold text-indigo-600">
+                            {p.totalKg.toLocaleString('pt-BR')} kg
+                          </TableCell>
+                          <TableCell className="text-right text-slate-600">
+                            {p.totalPecas.toLocaleString('pt-BR')} pçs
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <span className={p.quebraPct > 2.5 ? "text-red-500 font-bold" : "text-emerald-500 font-semibold"}>
+                              {p.quebraPct.toFixed(2)}%
+                            </span>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
         </>
       )}
     </div>

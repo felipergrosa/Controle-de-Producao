@@ -1045,108 +1045,51 @@ export default function LancamentoRepuxados() {
           <h1 className="text-3xl font-bold bg-gradient-to-r from-indigo-500 to-cyan-500 bg-clip-text text-transparent">Lançamento de Repuxados</h1>
           <p className="text-muted-foreground mt-1">Insira e gerencie os lotes de repuxo do dia de trabalho</p>
         </div>
-        <div className="flex items-center gap-2 bg-background border rounded-lg p-2 shadow-sm">
-          <Calendar className="h-4 w-4 text-muted-foreground" />
-          <Input 
-            type="date" 
-            value={dataProducao} 
-            onChange={(e) => setDataProducao(e.target.value)}
-            className="border-0 shadow-none h-8 w-40 focus-visible:ring-0 cursor-pointer"
-          />
-        </div>
-      </div>
-
-      {/* Cards de Métricas do Dia */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <Card className="shadow-sm border border-border/60 hover:shadow transition-shadow">
-          <CardContent className="p-4 flex items-center justify-between">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">KG Bons</p>
-              <h3 className="text-2xl font-bold text-indigo-600 mt-1">
-                {statsQuery.isLoading ? "..." : `${((statsQuery.data?.totalKgProduzido ?? 0) - (statsQuery.data?.totalKgQuebrado ?? 0)).toFixed(1)} kg`}
-              </h3>
-            </div>
-            <div className="h-10 w-10 bg-indigo-50 rounded-full flex items-center justify-center text-indigo-500">
-              <Scale size={20} />
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="shadow-sm border border-border/60 hover:shadow transition-shadow">
-          <CardContent className="p-4 flex items-center justify-between">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Peças Produzidas</p>
-              <h3 className="text-2xl font-bold mt-1">
-                {statsQuery.isLoading ? "..." : (statsQuery.data?.totalPecasProduzidas ?? 0)}
-              </h3>
-            </div>
-            <div className="h-10 w-10 bg-emerald-50 rounded-full flex items-center justify-center text-emerald-500">
-              <CheckCircle2 size={20} />
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="shadow-sm border border-border/60 hover:shadow transition-shadow">
-          <CardContent className="p-4 flex items-center justify-between">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Quebras (%)</p>
-              <h3 className="text-2xl font-bold mt-1 text-red-500">
-                {statsQuery.isLoading ? "..." : `${statsQuery.data?.pctQuebraMedia ?? 0}%`}
-              </h3>
-            </div>
-            <div className="h-10 w-10 bg-red-50 rounded-full flex items-center justify-center text-red-500">
-              <Percent size={20} />
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="shadow-sm border border-border/60 hover:shadow transition-shadow">
-          <CardContent className="p-4 flex items-center justify-between">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Paradas (Min)</p>
-              <h3 className="text-2xl font-bold mt-1 text-amber-500">
-                {statsQuery.isLoading ? "..." : `${statsQuery.data?.totalTempoParadasMinutos ?? 0}m`}
-              </h3>
-            </div>
-            <div className="h-10 w-10 bg-amber-50 rounded-full flex items-center justify-center text-amber-500">
-              <Clock size={20} />
-            </div>
-          </CardContent>
-        </Card>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* Formulário de Lançamento */}
         <div className="lg:col-span-5 space-y-6">
           <Card className="border border-border/80 shadow-md">
-            <CardHeader className="bg-slate-50/50 border-b">
-              <CardTitle className="text-lg flex items-center justify-between w-full">
+            <CardHeader className="bg-slate-50/50 border-b py-3">
+              <div className="flex flex-row items-center justify-between w-full">
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <FileText className="h-5 w-5 text-indigo-500 flex-shrink-0" />
+                  <span className="truncate">{editingId ? "Editar Lançamento" : "Registrar Lote de Produção"}</span>
+                </CardTitle>
                 <div className="flex items-center gap-2">
-                  <FileText className="h-5 w-5 text-indigo-500" />
-                  {editingId ? "Editar Lançamento" : "Registrar Lote de Produção"}
+                  {editingId && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-8 text-xs border-indigo-200 text-indigo-600 hover:bg-indigo-50 px-2.5"
+                      onClick={() => {
+                        setEditingId(null);
+                        setProductId("");
+                        setPecasProduzidas("");
+                        setPecasQuebradas("0");
+                        setCausaQuebraId("");
+                        setObs("");
+                        setParadas([]);
+                        setProductSearch("");
+                        toast.info("Edição cancelada. Formulário limpo.");
+                      }}
+                    >
+                      Cancelar
+                    </Button>
+                  )}
+                  <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-lg px-2 py-1 shadow-xs h-8">
+                    <Calendar className="h-3.5 w-3.5 text-indigo-500 shrink-0" />
+                    <Input 
+                      type="date" 
+                      value={dataProducao} 
+                      onChange={(e) => setDataProducao(e.target.value)}
+                      className="border-0 shadow-none h-6 p-0 text-xs w-28 focus-visible:ring-0 cursor-pointer font-semibold text-slate-700 bg-transparent"
+                    />
+                  </div>
                 </div>
-                {editingId && (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="h-7 text-xs border-indigo-200 text-indigo-600 hover:bg-indigo-50"
-                    onClick={() => {
-                      setEditingId(null);
-                      setProductId("");
-                      setPecasProduzidas("");
-                      setPecasQuebradas("0");
-                      setCausaQuebraId("");
-                      setObs("");
-                      setParadas([]);
-                      setProductSearch("");
-                      toast.info("Edição cancelada. Formulário limpo.");
-                    }}
-                  >
-                    Cancelar Edição
-                  </Button>
-                )}
-              </CardTitle>
+              </div>
             </CardHeader>
             <CardContent className="p-6">
               <form onSubmit={handleSalvarLancamento} className="space-y-4">
@@ -1711,11 +1654,56 @@ export default function LancamentoRepuxados() {
         {/* Tabela de Lançamentos do Dia */}
         <div className="lg:col-span-7 space-y-4">
           <Card className="border border-border/80 shadow-md">
-            <CardHeader className="bg-slate-50/50 border-b flex flex-row items-center justify-between py-4">
-              <CardTitle className="text-lg flex items-center gap-2">
+            <CardHeader className="bg-slate-50/50 border-b flex flex-col md:flex-row md:items-center justify-between gap-4 py-3">
+              <CardTitle className="text-lg flex items-center gap-2 shrink-0">
                 <Clock className="h-5 w-5 text-indigo-500" />
                 Lançamentos do Dia ({format(selectedDateObject, "dd/MM/yyyy")})
               </CardTitle>
+              <div className="flex flex-wrap items-center gap-2">
+                {/* KG Bons */}
+                <div className="flex items-center gap-1.5 bg-indigo-50/60 border border-indigo-100 rounded-lg px-2.5 py-1 shadow-xs">
+                  <Scale className="h-3.5 w-3.5 text-indigo-500 shrink-0" />
+                  <div className="leading-none">
+                    <span className="text-[8px] font-bold text-indigo-400 block uppercase tracking-wider">KG Bons</span>
+                    <span className="text-xs font-extrabold text-indigo-700">
+                      {statsQuery.isLoading ? "..." : `${((statsQuery.data?.totalKgProduzido ?? 0) - (statsQuery.data?.totalKgQuebrado ?? 0)).toFixed(1)} kg`}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Peças Produzidas */}
+                <div className="flex items-center gap-1.5 bg-emerald-50/60 border border-emerald-100 rounded-lg px-2.5 py-1 shadow-xs">
+                  <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
+                  <div className="leading-none">
+                    <span className="text-[8px] font-bold text-emerald-400 block uppercase tracking-wider">Peças</span>
+                    <span className="text-xs font-extrabold text-emerald-700">
+                      {statsQuery.isLoading ? "..." : (statsQuery.data?.totalPecasProduzidas ?? 0)}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Quebras (%) */}
+                <div className="flex items-center gap-1.5 bg-red-50/60 border border-red-100 rounded-lg px-2.5 py-1 shadow-xs">
+                  <Percent className="h-3.5 w-3.5 text-red-500 shrink-0" />
+                  <div className="leading-none">
+                    <span className="text-[8px] font-bold text-red-400 block uppercase tracking-wider">Quebras</span>
+                    <span className="text-xs font-extrabold text-red-600">
+                      {statsQuery.isLoading ? "..." : `${statsQuery.data?.pctQuebraMedia ?? 0}%`}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Paradas */}
+                <div className="flex items-center gap-1.5 bg-amber-50/60 border border-amber-100 rounded-lg px-2.5 py-1 shadow-xs">
+                  <Clock className="h-3.5 w-3.5 text-amber-500 shrink-0" />
+                  <div className="leading-none">
+                    <span className="text-[8px] font-bold text-amber-400 block uppercase tracking-wider">Paradas</span>
+                    <span className="text-xs font-extrabold text-amber-600">
+                      {statsQuery.isLoading ? "..." : `${statsQuery.data?.totalTempoParadasMinutos ?? 0}m`}
+                    </span>
+                  </div>
+                </div>
+              </div>
             </CardHeader>
             <CardContent className="p-0">
               {lancamentosQuery.isLoading ? (

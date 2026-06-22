@@ -8,23 +8,69 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { APP_TITLE } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
-import { LayoutDashboard, LogOut, Users, BarChart3, ClipboardList, Upload, FileText, Scale, Activity, Settings } from "lucide-react";
+import { LayoutDashboard, LogOut, Users, BarChart3, ClipboardList, Upload, FileText, Scale, Activity, Settings, Database, ChevronDown } from "lucide-react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
 import { Button } from "./ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./ui/tooltip";
 
-const menuItems = [
-  { icon: LayoutDashboard, label: "Dashboard", path: "/dashboard", adminOnly: false },
-  { icon: Activity, label: "Dashboard de Repuxo", path: "/repuxo/dashboard", adminOnly: false },
-  { icon: ClipboardList, label: "Lançamento de Produção", path: "/production", adminOnly: false },
-  { icon: Scale, label: "Lançamento de Repuxados", path: "/repuxo/lancamento", adminOnly: false },
-  { icon: Settings, label: "Gerenciador de Cadastros", path: "/repuxo/gerenciador", adminOnly: false },
-  { icon: BarChart3, label: "Relatório Diário", path: "/report", adminOnly: false },
-  { icon: LayoutDashboard, label: "Consulta de Produtos", path: "/products", adminOnly: false },
-  { icon: Upload, label: "Importar Produtos", path: "/import", adminOnly: false },
-  { icon: Users, label: "Usuários", path: "/users", adminOnly: true },
-  { icon: FileText, label: "Logs de Auditoria", path: "/audit-logs", adminOnly: true },
+type MenuItem = {
+  icon: any;
+  label: string;
+  adminOnly?: boolean;
+  children: {
+    icon: any;
+    label: string;
+    path: string;
+  }[];
+};
+
+const menuItems: MenuItem[] = [
+  {
+    icon: LayoutDashboard,
+    label: "Painel Geral",
+    adminOnly: false,
+    children: [
+      { icon: LayoutDashboard, label: "Dashboard Geral", path: "/dashboard" },
+      { icon: BarChart3, label: "Relatório Diário", path: "/report" },
+    ]
+  },
+  {
+    icon: ClipboardList,
+    label: "Apontamentos",
+    adminOnly: false,
+    children: [
+      { icon: ClipboardList, label: "Lançamento de Apontamento", path: "/production" },
+    ]
+  },
+  {
+    icon: Activity,
+    label: "Repuxo",
+    adminOnly: false,
+    children: [
+      { icon: Activity, label: "Dashboard de Repuxo", path: "/repuxo/dashboard" },
+      { icon: Scale, label: "Lançamento de Repuxados", path: "/repuxo/lancamento" },
+      { icon: Settings, label: "Gerenciador de Cadastros", path: "/repuxo/gerenciador" },
+    ]
+  },
+  {
+    icon: Database,
+    label: "Produtos",
+    adminOnly: false,
+    children: [
+      { icon: LayoutDashboard, label: "Consulta de Produtos", path: "/products" },
+      { icon: Upload, label: "Importar Produtos", path: "/import" },
+    ]
+  },
+  {
+    icon: Users,
+    label: "Admin",
+    adminOnly: true,
+    children: [
+      { icon: Users, label: "Usuários", path: "/users" },
+      { icon: FileText, label: "Logs de Auditoria", path: "/audit-logs" },
+    ]
+  }
 ];
 
 export default function DashboardLayout({
@@ -63,37 +109,66 @@ function DashboardLayoutContent({
   const accessibleMenuItems = menuItems.filter(
     item => !item.adminOnly || (user && "role" in user && user.role === "admin")
   );
-  const activeMenuItem = menuItems.find(item => item.path === location);
+  const activeMenuItem = menuItems.find(item => item.children.some(child => child.path === location));
 
   const navigateTo = (path: string) => {
     setLocation(path);
   };
 
   const renderMenuButtons = (options?: { inactiveVariant?: "ghost" | "outline"; className?: string }) =>
-    accessibleMenuItems.map(item => {
-      const isActive = location === item.path;
+    accessibleMenuItems.map((item, idx) => {
+      const hasActiveChild = item.children.some(child => child.path === location);
       const inactiveVariant = options?.inactiveVariant ?? "ghost";
-      const button = (
+      
+      const triggerButton = (
         <Button
-          key={item.path}
-          variant={isActive ? "default" : inactiveVariant}
-          size="icon"
-          onClick={() => navigateTo(item.path)}
+          variant={hasActiveChild ? "default" : inactiveVariant}
+          size={options?.inactiveVariant === "outline" ? "icon" : "sm"}
+          className={`${hasActiveChild ? "shadow" : ""} ${options?.className ?? "flex items-center gap-1.5 px-3 h-10"} select-none`.trim()}
           title={item.label}
-          aria-label={item.label}
-          className={`${isActive ? "shadow" : ""} ${options?.className ?? ""}`.trim()}
         >
-          <item.icon className="h-4 w-4" />
+          <item.icon className="h-4 w-4 shrink-0" />
+          {options?.inactiveVariant !== "outline" && (
+            <>
+              <span className="hidden lg:inline text-xs font-bold uppercase tracking-wider">{item.label}</span>
+              <ChevronDown className="h-3 w-3 text-muted-foreground/80 shrink-0" />
+            </>
+          )}
         </Button>
       );
 
-      return options?.inactiveVariant === "outline" ? (
-        button
-      ) : (
-        <Tooltip key={item.path}>
-          <TooltipTrigger asChild>{button}</TooltipTrigger>
-          <TooltipContent side="bottom">{item.label}</TooltipContent>
-        </Tooltip>
+      return (
+        <DropdownMenu key={idx}>
+          <DropdownMenuTrigger asChild>
+            {options?.inactiveVariant === "outline" ? (
+              triggerButton
+            ) : (
+              <div>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    {triggerButton}
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom" className="text-xs">{item.label}</TooltipContent>
+                </Tooltip>
+              </div>
+            )}
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="w-52 shadow-md">
+            {item.children.map(child => {
+              const isChildActive = location === child.path;
+              return (
+                <DropdownMenuItem
+                  key={child.path}
+                  onClick={() => navigateTo(child.path)}
+                  className={`cursor-pointer gap-2.5 py-2 text-xs font-semibold ${isChildActive ? "bg-indigo-50/80 text-indigo-700 font-bold hover:bg-indigo-50/80" : "text-slate-600 hover:text-slate-900"}`}
+                >
+                  <child.icon className={`h-4 w-4 shrink-0 ${isChildActive ? "text-indigo-600" : "text-slate-400"}`} />
+                  <span>{child.label}</span>
+                </DropdownMenuItem>
+              );
+            })}
+          </DropdownMenuContent>
+        </DropdownMenu>
       );
     });
 

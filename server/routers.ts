@@ -1168,6 +1168,7 @@ export const appRouter = router({
           turno: z.string().optional().nullable(),
           causaQuebraId: z.number().optional().nullable(),
           motivoParadaId: z.number().optional().nullable(),
+          productId: z.string().optional().nullable(),
           sortBy: z.string().optional().nullable(),
         })
       )
@@ -1177,6 +1178,7 @@ export const appRouter = router({
           turno: input.turno,
           causaQuebraId: input.causaQuebraId,
           motivoParadaId: input.motivoParadaId,
+          productId: input.productId,
           sortBy: input.sortBy,
         });
       }),
