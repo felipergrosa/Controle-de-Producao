@@ -108,7 +108,14 @@ export default function DashboardRepuxo() {
     staleTime: 30000 // Cache 30 segundos
   });
 
-  const stats = statsQuery.data;
+  const stats = statsQuery.data ? {
+    ...statsQuery.data,
+    rankingProdutos: statsQuery.data.rankingProdutos || [],
+    rankingRepuxadores: statsQuery.data.rankingRepuxadores || [],
+    paretoCausas: statsQuery.data.paretoCausas || [],
+    evolucaoDiaria: statsQuery.data.evolucaoDiaria || [],
+    oeeGeral: statsQuery.data.oeeGeral || { disponibilidade: 100, performance: 100, qualidade: 100, oee: 100 },
+  } : undefined;
 
   const hasActiveFilters = repuxadorId !== undefined || turno !== undefined || causaQuebraId !== undefined || motivoParadaId !== undefined || productId !== undefined || (sortBy !== undefined && sortBy !== "producao_desc");
 
