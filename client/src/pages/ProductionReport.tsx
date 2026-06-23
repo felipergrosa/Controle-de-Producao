@@ -15,6 +15,7 @@ import { toast } from "sonner";
 import * as XLSX from "xlsx";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import Swal from "sweetalert2";
 
 export default function ProductionReport() {
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split("T")[0]);
@@ -186,7 +187,18 @@ export default function ProductionReport() {
       return;
     }
 
-    if (!confirm("Tem certeza que deseja reabrir este dia? Os itens serão disponibilizados para edição novamente.")) {
+    const result = await Swal.fire({
+      title: "Reabrir o dia?",
+      text: "Os itens serão disponibilizados para edição novamente.",
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonColor: "#4f46e5",
+      cancelButtonColor: "#ef4444",
+      confirmButtonText: "Sim, reabrir",
+      cancelButtonText: "Cancelar"
+    });
+
+    if (!result.isConfirmed) {
       return;
     }
 

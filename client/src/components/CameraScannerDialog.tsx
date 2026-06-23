@@ -1,6 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { BrowserMultiFormatReader, type IScannerControls } from "@zxing/browser";
-import { NotFoundException, type Result, type Exception } from "@zxing/library";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Html5Qrcode, Html5QrcodeSupportedFormats, Html5QrcodeScannerState } from "html5-qrcode";
 
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -17,113 +16,87 @@ interface CameraScannerDialogProps {
   onDetected: (payload: CameraDetectedPayload) => void;
 }
 
-type ScannerControls = { stop: () => void } | null;
-
-function pickPreferredDevice(devices: MediaDeviceInfo[]): string | undefined {
-  if (!devices.length) return undefined;
-  const lower = devices.map((device) => ({
-    device,
-    label: device.label?.toLowerCase() ?? "",
-  }));
-
-  const backFacing = lower.find(({ label }) => label.includes("back") || label.includes("rear"));
-  if (backFacing) {
-    return backFacing.device.deviceId;
-  }
-
-  return devices[0]?.deviceId;
-}
-
 export type { CameraDetectedPayload };
 
 export function CameraScannerDialog({ open, onClose, onDetected }: CameraScannerDialogProps) {
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const readerRef = useRef<BrowserMultiFormatReader | null>(null);
-  const controlsRef = useRef<ScannerControls>(null);
   const [isStarting, setIsStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const selectedDeviceIdRef = useRef<string | undefined>(undefined);
+  const [isSupported, setIsSupported] = useState(true);
+  
+  const scannerRef = useRef<Html5Qrcode | null>(null);
+  const readerElementId = "html5-qrcode-reader-element";
 
-  const isSupported = useMemo(() => {
-    return typeof navigator !== "undefined" && !!navigator.mediaDevices?.getUserMedia;
-  }, []);
-
-  const stopScanner = useCallback(() => {
-    controlsRef.current?.stop?.();
-    controlsRef.current = null;
-    readerRef.current?.reset?.();
-    readerRef.current = null;
-    if (videoRef.current && videoRef.current.srcObject instanceof MediaStream) {
-      videoRef.current.srcObject.getTracks().forEach((track) => track.stop());
-      videoRef.current.srcObject = null;
+  const stopScanner = useCallback(async () => {
+    try {
+      if (scannerRef.current) {
+        if (scannerRef.current.getState() === Html5QrcodeScannerState.SCANNING || scannerRef.current.getState() === Html5QrcodeScannerState.PAUSED) {
+          await scannerRef.current.stop();
+        }
+        scannerRef.current.clear();
+        scannerRef.current = null;
+      }
+    } catch (err) {
+      console.error("Failed to stop scanner", err);
     }
   }, []);
 
-  const startScanner = useCallback(
-    async (deviceId?: string, options?: { skipDeviceId?: boolean }) => {
-      if (!isSupported || !videoRef.current) return;
+  const startScanner = useCallback(async () => {
+    if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) {
+      setIsSupported(false);
+      return;
+    }
 
-      setIsStarting(true);
-      setError(null);
-      stopScanner();
+    setIsStarting(true);
+    setError(null);
+    await stopScanner();
 
-      const reader = new BrowserMultiFormatReader();
-      readerRef.current = reader;
-
-      const skipDeviceId = options?.skipDeviceId ?? false;
-
-      try {
-        const availableDevices = await BrowserMultiFormatReader.listVideoInputDevices().catch(() => []);
-
-        const preferredDevice = skipDeviceId ? undefined : deviceId ?? pickPreferredDevice(availableDevices);
-        selectedDeviceIdRef.current = preferredDevice;
-
-        const controls = await reader.decodeFromVideoDevice(
-          skipDeviceId ? null : preferredDevice ?? null,
-          videoRef.current,
-          (result: Result | null, err: Exception | null) => {
-            if (result) {
-              const text = result.getText();
-              if (text) {
-                stopScanner();
-                const resume = async () => {
-                  await startScanner(selectedDeviceIdRef.current, { skipDeviceId: false });
-                };
-                onDetected({ code: text, resume });
-              }
-            }
-
-            if (err && !(err instanceof NotFoundException)) {
-              console.error("Scanner error", err);
-              setError("Não foi possível ler o código. Ajuste o enquadramento e tente novamente.");
-            }
+    try {
+      scannerRef.current = new Html5Qrcode(readerElementId);
+      await scannerRef.current.start(
+        { facingMode: "environment" }, // Prioriza a câmera traseira
+        {
+          fps: 15, // Mais rápido
+          qrbox: { width: 280, height: 280 }, // Caixa de leitura um pouco maior
+          formatsToSupport: [
+            Html5QrcodeSupportedFormats.QR_CODE,
+            Html5QrcodeSupportedFormats.CODE_128,
+            Html5QrcodeSupportedFormats.CODE_39,
+            Html5QrcodeSupportedFormats.EAN_13,
+            Html5QrcodeSupportedFormats.EAN_8,
+            Html5QrcodeSupportedFormats.UPC_A,
+            Html5QrcodeSupportedFormats.UPC_E,
+            Html5QrcodeSupportedFormats.ITF
+          ],
+        },
+        (decodedText) => {
+          if (decodedText) {
+            stopScanner().then(() => {
+              const resume = async () => {
+                await startScanner();
+              };
+              onDetected({ code: decodedText, resume });
+            });
           }
-        );
-
-        controlsRef.current = controls as ScannerControls;
-      } catch (err: any) {
-        console.error("Camera access error", err);
-        if (!skipDeviceId && err?.name === "NotReadableError") {
-          console.warn("Retrying camera start without explicit deviceId");
-          await startScanner(undefined, { skipDeviceId: true });
-          return;
+        },
+        (errorMessage) => {
+          // Os erros de leitura quadro a quadro são ignorados pois são comuns
         }
-
-        if (err?.name === "NotAllowedError" || err?.message?.includes("denied")) {
-          setError("Acesso à câmera negado. Conceda permissão para escanear.");
-        } else if (err?.name === "NotFoundError") {
-          setError("Nenhuma câmera disponível foi encontrada neste dispositivo.");
-        } else if (err?.name === "NotReadableError") {
-          setError("Não foi possível iniciar a câmera. Verifique se ela não está sendo usada por outro aplicativo.");
-        } else {
-          setError("Não foi possível iniciar a câmera. Verifique se ela está disponível.");
-        }
-      } finally {
-        setIsStarting(false);
+      );
+    } catch (err: any) {
+      console.error("Camera access error", err);
+      if (err?.name === "NotAllowedError" || err?.message?.includes("denied")) {
+        setError("Acesso à câmera negado. Conceda permissão para escanear.");
+      } else if (err?.name === "NotFoundError") {
+        setError("Nenhuma câmera disponível foi encontrada neste dispositivo.");
+      } else if (err?.name === "NotReadableError") {
+        setError("Não foi possível iniciar a câmera. Verifique se ela não está sendo usada por outro aplicativo.");
+      } else {
+        setError("Não foi possível iniciar a câmera. Verifique se ela está disponível.");
       }
-    },
-    [isSupported, onClose, onDetected, stopScanner]
-  );
+    } finally {
+      setIsStarting(false);
+    }
+  }, [stopScanner, onDetected]);
 
   useEffect(() => {
     if (!open) {
@@ -131,19 +104,28 @@ export function CameraScannerDialog({ open, onClose, onDetected }: CameraScanner
       return;
     }
 
-    startScanner();
+    // Atraso curto para dar tempo de renderizar a div antes do scanner iniciar
+    const timer = setTimeout(() => {
+      startScanner();
+    }, 100);
 
     return () => {
+      clearTimeout(timer);
       stopScanner();
     };
   }, [open, startScanner, stopScanner]);
 
   const handleRetry = () => {
-    startScanner(selectedDeviceIdRef.current, { skipDeviceId: false });
+    startScanner();
+  };
+
+  const handleClose = () => {
+    stopScanner();
+    onClose();
   };
 
   return (
-    <Dialog open={open} onOpenChange={(isOpen) => (!isOpen ? onClose() : undefined)}>
+    <Dialog open={open} onOpenChange={(isOpen) => (!isOpen ? handleClose() : undefined)}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Escanear com câmera</DialogTitle>
@@ -156,25 +138,19 @@ export function CameraScannerDialog({ open, onClose, onDetected }: CameraScanner
           <div className="flex flex-col items-center justify-center gap-4 py-8 text-center">
             <CameraOff className="h-12 w-12 text-muted-foreground" />
             <p className="text-sm text-muted-foreground">
-              Este navegador não oferece acesso à câmera. Abra em um dispositivo com suporte ou use outra forma de lançamento.
+              Este navegador não oferece suporte à câmera. Abra em um dispositivo com suporte ou digite o código manualmente.
             </p>
           </div>
         ) : (
           <div className="space-y-4">
-            <div className="relative overflow-hidden rounded-xl border bg-black">
-              <video
-                ref={videoRef}
-                className="h-full w-full object-cover"
-                playsInline
-                muted
-                autoPlay
-              />
-              <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-                <div className="h-44 w-44 rounded-xl border-2 border-white/80 shadow-[0_0_25px_rgba(0,0,0,0.7)]" />
-              </div>
-              <div className="absolute left-0 right-0 bottom-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent p-3 text-center text-xs text-white">
-                Aproximar o código até ficar nítido acelera a leitura.
-              </div>
+            <div className="relative overflow-hidden rounded-xl border bg-black min-h-[300px]">
+              <div id={readerElementId} className="w-full h-full [&>video]:object-cover" />
+              {isStarting && (
+                <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/50 text-white z-10">
+                  <div className="h-8 w-8 animate-spin rounded-full border-4 border-white/20 border-t-white" />
+                  <span className="mt-4 text-sm font-medium">Iniciando câmera...</span>
+                </div>
+              )}
             </div>
 
             {error && (
@@ -187,7 +163,7 @@ export function CameraScannerDialog({ open, onClose, onDetected }: CameraScanner
         )}
 
         <DialogFooter className="flex flex-col gap-2 sm:flex-row sm:justify-between">
-          <Button variant="outline" onClick={() => { stopScanner(); onClose(); }}>
+          <Button variant="outline" onClick={handleClose}>
             Fechar
           </Button>
           <div className="flex gap-2">

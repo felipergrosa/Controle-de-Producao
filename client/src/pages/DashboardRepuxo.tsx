@@ -255,9 +255,17 @@ export default function DashboardRepuxo() {
 
   const produtosFiltrados = useMemo(() => {
     if (!produtosQuery.data) return [];
-    if (!searchProduto) return produtosQuery.data.slice(0, 10);
+    
+    // Filtro primário: apenas produtos que possuam REPUXADO no código ou nome
+    const repuxadoProducts = produtosQuery.data.filter(p => 
+      p.code.toUpperCase().includes("REPUXADO") || 
+      p.description.toUpperCase().includes("REPUXADO")
+    );
+
     const term = searchProduto.trim().toLowerCase();
-    return produtosQuery.data.filter(p => 
+    if (!term) return repuxadoProducts.slice(0, 10);
+    
+    return repuxadoProducts.filter(p => 
       p.code.toLowerCase().includes(term) || 
       p.description.toLowerCase().includes(term)
     ).slice(0, 10);

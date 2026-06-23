@@ -1,5 +1,8 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { Button } from "@/components/ui/button";
+import { Calendar } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import Swal from "sweetalert2";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -20,7 +23,7 @@ import {
   CheckCircle2, 
   Clock, 
   Pencil,
-  Calendar, 
+  Calendar as CalendarIcon, 
   Scale, 
   UserPlus, 
   FileText,
@@ -142,7 +145,7 @@ function RetroDigitalClock({
 
   return (
     <div className="flex flex-col items-center p-3 bg-slate-100/80 rounded-xl border border-slate-200/80 shadow-xs w-[165px] select-none text-slate-800">
-      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">{label}</span>
+      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-0">{label}</span>
       
       <div className="flex items-center gap-2">
         {/* Bloco de Horas */}
@@ -280,6 +283,7 @@ export default function LancamentoRepuxados() {
   const [pecasQuebradas, setPecasQuebradas] = useState("0");
   const [causaQuebraId, setCausaQuebraId] = useState("");
   const [obs, setObs] = useState("");
+  const [showObs, setShowObs] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [sortField, setSortField] = useState<string | null>(null);
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
@@ -329,9 +333,17 @@ export default function LancamentoRepuxados() {
   
   const filteredProducts = useMemo(() => {
     if (!produtosQuery.data) return [];
+    
+    // Primeiro filtra para permitir somente produtos com "REPUXADO" no nome ou código
+    const repuxadoProducts = produtosQuery.data.filter(p => 
+      p.code.toUpperCase().includes("REPUXADO") || 
+      p.description.toUpperCase().includes("REPUXADO")
+    );
+
     const term = productSearch.trim().toLowerCase();
-    if (!term) return produtosQuery.data.slice(0, 10);
-    return produtosQuery.data.filter(p => 
+    if (!term) return repuxadoProducts.slice(0, 10);
+    
+    return repuxadoProducts.filter(p => 
       p.code.toLowerCase().includes(term) || 
       p.description.toLowerCase().includes(term)
     ).slice(0, 10);
@@ -405,12 +417,16 @@ export default function LancamentoRepuxados() {
     onSuccess: () => {
       toast.success("Lançamento de repuxo salvo com sucesso!");
       // Resetar form parcial
+      setProductId("");
       setPecasProduzidas("");
       setPecasQuebradas("0");
       setCausaQuebraId("");
       setObs("");
+      setShowObs(false);
       setParadas([]);
       setProductSearch("");
+      
+      setTimeout(() => searchInputRef.current?.focus(), 100);
       
       // Invalidações
       utils.repuxados.getByDateRange.invalidate();
@@ -444,8 +460,11 @@ export default function LancamentoRepuxados() {
       setPecasQuebradas("0");
       setCausaQuebraId("");
       setObs("");
+      setShowObs(false);
       setParadas([]);
       setProductSearch("");
+      
+      setTimeout(() => searchInputRef.current?.focus(), 100);
       
       utils.repuxados.getByDateRange.invalidate();
       utils.repuxados.getStats.invalidate();
@@ -983,7 +1002,18 @@ export default function LancamentoRepuxados() {
   };
 
   const handleDeletarLancamento = async (id: string) => {
-    if (confirm("Deseja realmente excluir este lançamento de produção?")) {
+    const result = await Swal.fire({
+      title: "Tem certeza?",
+      text: "Deseja realmente excluir este lançamento de produção?",
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonColor: "#4f46e5",
+      cancelButtonColor: "#ef4444",
+      confirmButtonText: "Sim, excluir",
+      cancelButtonText: "Cancelar"
+    });
+
+    if (result.isConfirmed) {
       await deleteLancamento.mutateAsync({ id });
     }
   };
@@ -1052,8 +1082,8 @@ export default function LancamentoRepuxados() {
         <div className="lg:col-span-5 space-y-6">
           <Card className="bg-slate-50/50 border border-border/80 shadow-md py-4">
             <CardHeader className="bg-slate-50/50 border-b">
-              <div className="flex flex-row items-center justify-between w-full">
-                <CardTitle className="text-lg flex items-center gap-2">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between w-full gap-3 sm:gap-0">
+                <CardTitle className="text-base sm:text-lg flex items-center gap-2">
                   <FileText className="h-5 w-5 text-indigo-500 flex-shrink-0" />
                   <span className="truncate">{editingId ? "Editar Lançamento" : "Registrar Lote de Produção"}</span>
                 </CardTitle>
@@ -1071,6 +1101,7 @@ export default function LancamentoRepuxados() {
                         setPecasQuebradas("0");
                         setCausaQuebraId("");
                         setObs("");
+                        setShowObs(false);
                         setParadas([]);
                         setProductSearch("");
                         toast.info("Edição cancelada. Formulário limpo.");
@@ -1080,7 +1111,7 @@ export default function LancamentoRepuxados() {
                     </Button>
                   )}
                   <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-lg px-2 py-1 shadow-xs h-8">
-                    <Calendar className="h-3.5 w-3.5 text-indigo-500 shrink-0" />
+                    <CalendarIcon className="h-3.5 w-3.5 text-indigo-500 shrink-0" />
                     <Input 
                       type="date" 
                       value={dataProducao} 
@@ -1127,7 +1158,7 @@ export default function LancamentoRepuxados() {
                             size="icon"
                             title="Escolher data de lançamento"
                           >
-                            <Calendar className="h-4 w-4" />
+                            <CalendarIcon className="h-4 w-4" />
                           </Button>
                         </div>
 
@@ -1182,7 +1213,7 @@ export default function LancamentoRepuxados() {
                                     }}
                                     className="justify-start text-xs"
                                   >
-                                    <Calendar className="mr-2 h-3.5 w-3.5" />
+                                    <CalendarIcon className="mr-2 h-3.5 w-3.5" />
                                     Escolher data
                                   </Button>
                                 </div>
@@ -1597,13 +1628,37 @@ export default function LancamentoRepuxados() {
 
                 {/* Obs */}
                 <div className="space-y-2">
-                  <Label>Observações</Label>
-                  <Textarea 
-                    placeholder="Adicione observações se necessário" 
-                    value={obs} 
-                    onChange={(e) => setObs(e.target.value)} 
-                    rows={2}
-                  />
+                  {!showObs && !obs ? (
+                    <button
+                      type="button"
+                      onClick={() => setShowObs(true)}
+                      className="text-sm text-indigo-600 hover:text-indigo-800 font-semibold underline-offset-4 hover:underline"
+                    >
+                      + Observações
+                    </button>
+                  ) : (
+                    <div className="animate-in fade-in slide-in-from-top-2 duration-300">
+                      <div className="flex justify-between items-center mb-2">
+                        <Label>Observações</Label>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setShowObs(false);
+                            if (!obs) setObs(""); // Reset optional if hidden and empty
+                          }}
+                          className="text-[10px] text-slate-400 hover:text-slate-600 font-bold uppercase tracking-wider"
+                        >
+                          Ocultar
+                        </button>
+                      </div>
+                      <Textarea 
+                        placeholder="Adicione observações se necessário" 
+                        value={obs} 
+                        onChange={(e) => setObs(e.target.value)} 
+                        rows={2}
+                      />
+                    </div>
+                  )}
                 </div>
 
                 {/* Painel de Cálculo inline (Micro-Interações) */}
@@ -1659,46 +1714,46 @@ export default function LancamentoRepuxados() {
                 <Clock className="h-5 w-5 text-indigo-500" />
                 Lançamentos do Dia ({format(selectedDateObject, "dd/MM/yyyy")})
               </CardTitle>
-              <div className="flex flex-wrap items-center gap-2">
+              <div className="grid grid-cols-4 md:flex md:flex-wrap items-center gap-1.5 md:gap-2 w-full md:w-auto">
                 {/* KG Bons */}
-                <div className="flex items-center gap-1.5 bg-indigo-50/60 border border-indigo-100 rounded-lg px-2.5 py-1 shadow-xs">
+                <div className="flex flex-col md:flex-row items-center justify-center md:justify-start gap-0.5 md:gap-1.5 bg-indigo-50/60 border border-indigo-100 rounded-lg px-1 md:px-2.5 py-1.5 md:py-1 shadow-xs text-center md:text-left">
                   <Scale className="h-3.5 w-3.5 text-indigo-500 shrink-0" />
                   <div className="leading-none">
                     <span className="text-[8px] font-bold text-indigo-400 block uppercase tracking-wider">KG Bons</span>
-                    <span className="text-xs font-extrabold text-indigo-700">
+                    <span className="text-[10px] md:text-xs font-extrabold text-indigo-700">
                       {statsQuery.isLoading ? "..." : `${((statsQuery.data?.totalKgProduzido ?? 0) - (statsQuery.data?.totalKgQuebrado ?? 0)).toFixed(1)} kg`}
                     </span>
                   </div>
                 </div>
 
                 {/* Peças Produzidas */}
-                <div className="flex items-center gap-1.5 bg-emerald-50/60 border border-emerald-100 rounded-lg px-2.5 py-1 shadow-xs">
+                <div className="flex flex-col md:flex-row items-center justify-center md:justify-start gap-0.5 md:gap-1.5 bg-emerald-50/60 border border-emerald-100 rounded-lg px-1 md:px-2.5 py-1.5 md:py-1 shadow-xs text-center md:text-left">
                   <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
                   <div className="leading-none">
                     <span className="text-[8px] font-bold text-emerald-400 block uppercase tracking-wider">Peças</span>
-                    <span className="text-xs font-extrabold text-emerald-700">
+                    <span className="text-[10px] md:text-xs font-extrabold text-emerald-700">
                       {statsQuery.isLoading ? "..." : (statsQuery.data?.totalPecasProduzidas ?? 0)}
                     </span>
                   </div>
                 </div>
 
                 {/* Quebras (%) */}
-                <div className="flex items-center gap-1.5 bg-red-50/60 border border-red-100 rounded-lg px-2.5 py-1 shadow-xs">
+                <div className="flex flex-col md:flex-row items-center justify-center md:justify-start gap-0.5 md:gap-1.5 bg-red-50/60 border border-red-100 rounded-lg px-1 md:px-2.5 py-1.5 md:py-1 shadow-xs text-center md:text-left">
                   <Percent className="h-3.5 w-3.5 text-red-500 shrink-0" />
                   <div className="leading-none">
                     <span className="text-[8px] font-bold text-red-400 block uppercase tracking-wider">Quebras</span>
-                    <span className="text-xs font-extrabold text-red-600">
+                    <span className="text-[10px] md:text-xs font-extrabold text-red-600">
                       {statsQuery.isLoading ? "..." : `${statsQuery.data?.pctQuebraMedia ?? 0}%`}
                     </span>
                   </div>
                 </div>
 
                 {/* Paradas */}
-                <div className="flex items-center gap-1.5 bg-amber-50/60 border border-amber-100 rounded-lg px-2.5 py-1 shadow-xs">
+                <div className="flex flex-col md:flex-row items-center justify-center md:justify-start gap-0.5 md:gap-1.5 bg-amber-50/60 border border-amber-100 rounded-lg px-1 md:px-2.5 py-1.5 md:py-1 shadow-xs text-center md:text-left">
                   <Clock className="h-3.5 w-3.5 text-amber-500 shrink-0" />
                   <div className="leading-none">
                     <span className="text-[8px] font-bold text-amber-400 block uppercase tracking-wider">Paradas</span>
-                    <span className="text-xs font-extrabold text-amber-600">
+                    <span className="text-[10px] md:text-xs font-extrabold text-amber-600">
                       {statsQuery.isLoading ? "..." : `${statsQuery.data?.totalTempoParadasMinutos ?? 0}m`}
                     </span>
                   </div>
@@ -1711,168 +1766,235 @@ export default function LancamentoRepuxados() {
               ) : !lancamentosQuery.data || lancamentosQuery.data.length === 0 ? (
                 <div className="text-center py-12 text-muted-foreground text-sm">Nenhum lote lançado nesta data</div>
               ) : (
-                <div className="overflow-x-auto">
-                  <Table>
-                    <TableHeader className="bg-slate-100/50">
-                      <TableRow>
-                        <TableHead 
-                          className="cursor-pointer hover:bg-slate-200/50 transition-colors select-none"
-                          onClick={() => handleSort("repuxadorNome")}
-                        >
-                          <div className="flex items-center gap-1">
-                            Operador / Turno
-                            <ArrowUpDown size={12} className={cn("text-muted-foreground/60", sortField === "repuxadorNome" && "text-indigo-600 font-bold")} />
-                          </div>
-                        </TableHead>
-                        <TableHead 
-                          className="cursor-pointer hover:bg-slate-200/50 transition-colors select-none"
-                          onClick={() => handleSort("productCode")}
-                        >
-                          <div className="flex items-center gap-1">
-                            Produto
-                            <ArrowUpDown size={12} className={cn("text-muted-foreground/60", sortField === "productCode" && "text-indigo-600 font-bold")} />
-                          </div>
-                        </TableHead>
-                        <TableHead 
-                          className="cursor-pointer hover:bg-slate-200/50 transition-colors select-none"
-                          onClick={() => handleSort("horaInicio")}
-                        >
-                          <div className="flex items-center gap-1">
-                            Horário
-                            <ArrowUpDown size={12} className={cn("text-muted-foreground/60", sortField === "horaInicio" && "text-indigo-600 font-bold")} />
-                          </div>
-                        </TableHead>
-                        <TableHead 
-                          className="cursor-pointer hover:bg-slate-200/50 transition-colors select-none text-right"
-                          onClick={() => handleSort("pesoKg")}
-                        >
-                          <div className="flex items-center justify-end gap-1">
-                            Produzidas (kg)
-                            <ArrowUpDown size={12} className={cn("text-muted-foreground/60", sortField === "pesoKg" && "text-indigo-600 font-bold")} />
-                          </div>
-                        </TableHead>
-                        <TableHead 
-                          className="cursor-pointer hover:bg-slate-200/50 transition-colors select-none text-right"
-                          onClick={() => handleSort("pecasQuebradasPct")}
-                        >
-                          <div className="flex items-center justify-end gap-1">
-                            Quebras (%)
-                            <ArrowUpDown size={12} className={cn("text-muted-foreground/60", sortField === "pecasQuebradasPct" && "text-indigo-600 font-bold")} />
-                          </div>
-                        </TableHead>
-                        <TableHead 
-                          className="cursor-pointer hover:bg-slate-200/50 transition-colors select-none text-center"
-                          onClick={() => handleSort("tempoParadas")}
-                        >
-                          <div className="flex items-center justify-center gap-1">
-                            Paradas
-                            <ArrowUpDown size={12} className={cn("text-muted-foreground/60", sortField === "tempoParadas" && "text-indigo-600 font-bold")} />
-                          </div>
-                        </TableHead>
-                        <TableHead className="w-20 text-center">Ações</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {sortedLancamentos.map((l) => {
-                        const peso = Number(l.pesoUnitarioG || 0);
-                        const kgProd = (l.pecasProduzidas * peso) / 1000;
-                        const kgQueb = (l.pecasQuebradas * peso) / 1000;
-                        const pctQ = l.pecasProduzidas > 0 ? (l.pecasQuebradas / l.pecasProduzidas) * 100 : 0;
-                        const minInicio = timeToMinutes(l.horaInicio);
-                        const minFim = timeToMinutes(l.horaFim);
-                        let duracaoMin = minFim - minInicio;
-                        if (duracaoMin < 0) duracaoMin += 24 * 60;
-                        const tempoParadas = l.paradas.reduce((acc: number, cur: any) => acc + cur.tempoMinutos, 0);
+                <>
+                  <div className="hidden md:block overflow-x-auto">
+                    <Table>
+                      <TableHeader className="bg-slate-100/50">
+                        <TableRow>
+                          <TableHead 
+                            className="cursor-pointer hover:bg-slate-200/50 transition-colors select-none"
+                            onClick={() => handleSort("repuxadorNome")}
+                          >
+                            <div className="flex items-center gap-1">
+                              Operador / Turno
+                              <ArrowUpDown size={12} className={cn("text-muted-foreground/60", sortField === "repuxadorNome" && "text-indigo-600 font-bold")} />
+                            </div>
+                          </TableHead>
+                          <TableHead 
+                            className="cursor-pointer hover:bg-slate-200/50 transition-colors select-none"
+                            onClick={() => handleSort("productCode")}
+                          >
+                            <div className="flex items-center gap-1">
+                              Produto
+                              <ArrowUpDown size={12} className={cn("text-muted-foreground/60", sortField === "productCode" && "text-indigo-600 font-bold")} />
+                            </div>
+                          </TableHead>
+                          <TableHead 
+                            className="cursor-pointer hover:bg-slate-200/50 transition-colors select-none"
+                            onClick={() => handleSort("horaInicio")}
+                          >
+                            <div className="flex items-center gap-1">
+                              Horário
+                              <ArrowUpDown size={12} className={cn("text-muted-foreground/60", sortField === "horaInicio" && "text-indigo-600 font-bold")} />
+                            </div>
+                          </TableHead>
+                          <TableHead 
+                            className="cursor-pointer hover:bg-slate-200/50 transition-colors select-none text-right"
+                            onClick={() => handleSort("pesoKg")}
+                          >
+                            <div className="flex items-center justify-end gap-1">
+                              Produzidas (kg)
+                              <ArrowUpDown size={12} className={cn("text-muted-foreground/60", sortField === "pesoKg" && "text-indigo-600 font-bold")} />
+                            </div>
+                          </TableHead>
+                          <TableHead 
+                            className="cursor-pointer hover:bg-slate-200/50 transition-colors select-none text-right"
+                            onClick={() => handleSort("pecasQuebradasPct")}
+                          >
+                            <div className="flex items-center justify-end gap-1">
+                              Quebras (%)
+                              <ArrowUpDown size={12} className={cn("text-muted-foreground/60", sortField === "pecasQuebradasPct" && "text-indigo-600 font-bold")} />
+                            </div>
+                          </TableHead>
+                          <TableHead 
+                            className="cursor-pointer hover:bg-slate-200/50 transition-colors select-none text-center"
+                            onClick={() => handleSort("tempoParadas")}
+                          >
+                            <div className="flex items-center justify-center gap-1">
+                              Paradas
+                              <ArrowUpDown size={12} className={cn("text-muted-foreground/60", sortField === "tempoParadas" && "text-indigo-600 font-bold")} />
+                            </div>
+                          </TableHead>
+                          <TableHead className="w-20 text-center">Ações</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {sortedLancamentos.map((l) => {
+                          const peso = Number(l.pesoUnitarioG || 0);
+                          const kgProd = (l.pecasProduzidas * peso) / 1000;
+                          const kgQueb = (l.pecasQuebradas * peso) / 1000;
+                          const pctQ = l.pecasProduzidas > 0 ? (l.pecasQuebradas / l.pecasProduzidas) * 100 : 0;
+                          const minInicio = timeToMinutes(l.horaInicio);
+                          const minFim = timeToMinutes(l.horaFim);
+                          let duracaoMin = minFim - minInicio;
+                          if (duracaoMin < 0) duracaoMin += 24 * 60;
+                          const tempoParadas = l.paradas.reduce((acc: number, cur: any) => acc + cur.tempoMinutos, 0);
 
-                        return (
-                          <TableRow key={l.id}>
-                            <TableCell>
-                              <div className="flex flex-col gap-1">
-                                <div className="flex items-center gap-1.5">
-                                  <span 
-                                    className="h-2.5 w-2.5 rounded-full border border-slate-200 shrink-0" 
-                                    style={{ backgroundColor: l.repuxadorCor || "#6366f1" }} 
-                                  />
-                                  <span className="font-semibold text-sm text-slate-800">{l.repuxadorNome}</span>
+                          return (
+                            <TableRow key={l.id}>
+                              <TableCell>
+                                <div className="flex flex-col gap-1">
+                                  <div className="flex items-center gap-1.5">
+                                    <span 
+                                      className="h-2.5 w-2.5 rounded-full border border-slate-200 shrink-0" 
+                                      style={{ backgroundColor: l.repuxadorCor || "#6366f1" }} 
+                                    />
+                                    <span className="font-semibold text-sm text-slate-800">{l.repuxadorNome}</span>
+                                  </div>
+                                  <div className="flex items-center gap-1.5 pl-4">
+                                    <Badge 
+                                      variant="outline" 
+                                      style={{ 
+                                        borderColor: l.turnoCor || "#64748b", 
+                                        color: l.turnoCor || "#64748b" 
+                                      }}
+                                      className="text-[9px] font-bold px-1.5 py-0 bg-white"
+                                    >
+                                      {l.turno}
+                                    </Badge>
+                                  </div>
                                 </div>
-                                <div className="flex items-center gap-1.5 pl-4">
-                                  <Badge 
-                                    variant="outline" 
-                                    style={{ 
-                                      borderColor: l.turnoCor || "#64748b", 
-                                      color: l.turnoCor || "#64748b" 
-                                    }}
-                                    className="text-[9px] font-bold px-1.5 py-0 bg-white"
+                              </TableCell>
+                              <TableCell>
+                                <div className="font-mono font-semibold text-sm">{l.productCode}</div>
+                                <div className="text-xs text-muted-foreground line-clamp-1">{l.productDescription}</div>
+                              </TableCell>
+                              <TableCell>
+                                <div className="text-sm">{l.horaInicio} às {l.horaFim}</div>
+                                <div className="text-xs text-muted-foreground">({duracaoMin} min)</div>
+                              </TableCell>
+                              <TableCell className="text-right">
+                                <div className="font-semibold">{l.pecasProduzidas} pçs</div>
+                                <div className="text-xs text-muted-foreground">({kgProd.toFixed(1)} kg)</div>
+                              </TableCell>
+                              <TableCell className="text-right">
+                                <div className={pctQ > Number(l.metaQuebraPct || 0) ? "font-bold text-red-500" : "font-semibold"}>
+                                  {pctQ.toFixed(1)}%
+                                </div>
+                                {l.causaDescricao && (
+                                  <div className="text-[10px] text-red-400 font-semibold">{l.causaDescricao}</div>
+                                )}
+                              </TableCell>
+                              <TableCell className="text-center">
+                                {tempoParadas > 0 ? (
+                                  <div className="flex flex-col items-center gap-0.5">
+                                    <span className="inline-flex items-center rounded-md bg-amber-50 px-2 py-1 text-xs font-medium text-amber-800 ring-1 ring-inset ring-amber-600/20">
+                                      {tempoParadas}m
+                                    </span>
+                                    {l.paradas && l.paradas.length > 0 && (
+                                      <div className="text-[10px] text-amber-600 font-semibold uppercase max-w-[120px] truncate" title={l.paradas.map((p: any) => p.causaDescricao || p.motivo).filter(Boolean).join(", ")}>
+                                        {l.paradas.map((p: any) => p.causaDescricao || p.motivo).filter(Boolean).join(", ")}
+                                      </div>
+                                    )}
+                                  </div>
+                                ) : (
+                                  <span className="text-muted-foreground text-xs">-</span>
+                                )}
+                              </TableCell>
+                              <TableCell>
+                                <div className="flex items-center justify-center gap-1">
+                                  <Button 
+                                    size="icon" 
+                                    variant="ghost" 
+                                    className="h-8 w-8 text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50"
+                                    onClick={() => handleEditarClick(l)}
+                                    title="Editar lançamento"
                                   >
-                                    {l.turno}
-                                  </Badge>
+                                    <Pencil size={14} />
+                                  </Button>
+                                  <Button 
+                                    size="icon" 
+                                    variant="ghost" 
+                                    className="h-8 w-8 text-red-500 hover:text-red-700 hover:bg-red-50"
+                                    onClick={() => handleDeletarLancamento(l.id)}
+                                    title="Excluir lançamento"
+                                  >
+                                    <Trash2 size={14} />
+                                  </Button>
                                 </div>
-                              </div>
-                            </TableCell>
-                            <TableCell>
-                              <div className="font-mono font-semibold text-sm">{l.productCode}</div>
-                              <div className="text-xs text-muted-foreground line-clamp-1">{l.productDescription}</div>
-                            </TableCell>
-                            <TableCell>
-                              <div className="text-sm">{l.horaInicio} às {l.horaFim}</div>
-                              <div className="text-xs text-muted-foreground">({duracaoMin} min)</div>
-                            </TableCell>
-                            <TableCell className="text-right">
-                              <div className="font-semibold">{l.pecasProduzidas} pçs</div>
-                              <div className="text-xs text-muted-foreground">({kgProd.toFixed(1)} kg)</div>
-                            </TableCell>
-                            <TableCell className="text-right">
-                              <div className={pctQ > Number(l.metaQuebraPct || 0) ? "font-bold text-red-500" : "font-semibold"}>
-                                {pctQ.toFixed(1)}%
-                              </div>
-                              {l.causaDescricao && (
-                                <div className="text-[10px] text-red-400 font-semibold">{l.causaDescricao}</div>
-                              )}
-                            </TableCell>
-                            <TableCell className="text-center">
-                              {tempoParadas > 0 ? (
-                                <div className="flex flex-col items-center gap-0.5">
-                                  <span className="inline-flex items-center rounded-md bg-amber-50 px-2 py-1 text-xs font-medium text-amber-800 ring-1 ring-inset ring-amber-600/20">
-                                    {tempoParadas}m
-                                  </span>
-                                  {l.paradas && l.paradas.length > 0 && (
-                                    <div className="text-[10px] text-amber-600 font-semibold uppercase max-w-[120px] truncate" title={l.paradas.map((p: any) => p.causaDescricao || p.motivo).filter(Boolean).join(", ")}>
-                                      {l.paradas.map((p: any) => p.causaDescricao || p.motivo).filter(Boolean).join(", ")}
-                                    </div>
-                                  )}
-                                </div>
-                              ) : (
-                                <span className="text-muted-foreground text-xs">-</span>
-                              )}
-                            </TableCell>
-                            <TableCell>
-                              <div className="flex items-center justify-center gap-1">
-                                <Button 
-                                  size="icon" 
-                                  variant="ghost" 
-                                  className="h-8 w-8 text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50"
-                                  onClick={() => handleEditarClick(l)}
-                                  title="Editar lançamento"
-                                >
-                                  <Pencil size={14} />
-                                </Button>
-                                <Button 
-                                  size="icon" 
-                                  variant="ghost" 
-                                  className="h-8 w-8 text-red-500 hover:text-red-700 hover:bg-red-50"
-                                  onClick={() => handleDeletarLancamento(l.id)}
-                                  title="Excluir lançamento"
-                                >
-                                  <Trash2 size={14} />
-                                </Button>
-                              </div>
-                            </TableCell>
-                          </TableRow>
-                        );
-                      })}
-                    </TableBody>
-                  </Table>
-                </div>
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
+                      </TableBody>
+                    </Table>
+                  </div>
+                  
+                  {/* Visão de Cards Mobile */}
+                  <div className="grid grid-cols-1 gap-3 md:hidden p-3 bg-slate-50/50">
+                    {sortedLancamentos.map((l) => {
+                      const peso = Number(l.pesoUnitarioG || 0);
+                      const kgProd = (l.pecasProduzidas * peso) / 1000;
+                      const pctQ = l.pecasProduzidas > 0 ? (l.pecasQuebradas / l.pecasProduzidas) * 100 : 0;
+                      const minInicio = timeToMinutes(l.horaInicio);
+                      const minFim = timeToMinutes(l.horaFim);
+                      let duracaoMin = minFim - minInicio;
+                      if (duracaoMin < 0) duracaoMin += 24 * 60;
+                      const tempoParadas = l.paradas.reduce((acc: number, cur: any) => acc + cur.tempoMinutos, 0);
+
+                      return (
+                        <div key={l.id} className="bg-white border border-slate-200 rounded-xl p-3 shadow-sm flex flex-col gap-2">
+                          <div className="flex justify-between items-start mb-1">
+                            <div className="flex items-center gap-1.5">
+                              <span className="h-2.5 w-2.5 rounded-full border border-slate-200 shrink-0" style={{ backgroundColor: l.repuxadorCor || "#6366f1" }} />
+                              <span className="font-semibold text-sm text-slate-800">{l.repuxadorNome}</span>
+                              <Badge variant="outline" style={{ borderColor: l.turnoCor || "#64748b", color: l.turnoCor || "#64748b" }} className="text-[9px] px-1.5 py-0 h-4 bg-white">
+                                {l.turno}
+                              </Badge>
+                            </div>
+                            <div className="flex gap-1">
+                              <Button size="icon" variant="ghost" className="h-7 w-7 text-indigo-600 hover:bg-indigo-50" onClick={() => handleEditarClick(l)}>
+                                <Pencil size={12} />
+                              </Button>
+                              <Button size="icon" variant="ghost" className="h-7 w-7 text-red-500 hover:bg-red-50" onClick={() => handleDeletarLancamento(l.id)}>
+                                <Trash2 size={12} />
+                              </Button>
+                            </div>
+                          </div>
+
+                          <div className="flex flex-col mb-1">
+                            <div className="font-mono text-xs font-bold text-indigo-700">{l.productCode}</div>
+                            <div className="text-[11px] text-slate-600 leading-tight">{l.productDescription}</div>
+                          </div>
+
+                          <div className="grid grid-cols-3 gap-2 py-2 border-y border-slate-100">
+                            <div className="flex flex-col">
+                              <span className="text-[9px] text-slate-400 font-bold uppercase">Produção</span>
+                              <span className="text-xs font-bold text-slate-800">{l.pecasProduzidas} <span className="font-normal text-[10px] text-muted-foreground">pçs</span></span>
+                              <span className="text-[10px] text-muted-foreground">{kgProd.toFixed(1)} kg</span>
+                            </div>
+                            <div className="flex flex-col">
+                              <span className="text-[9px] text-slate-400 font-bold uppercase">Quebras</span>
+                              <span className={cn("text-xs font-bold", pctQ > Number(l.metaQuebraPct || 0) ? "text-red-500" : "text-slate-800")}>{pctQ.toFixed(1)}%</span>
+                              {l.causaDescricao && <span className="text-[9px] text-red-400 font-semibold truncate" title={l.causaDescricao}>{l.causaDescricao}</span>}
+                            </div>
+                            <div className="flex flex-col">
+                              <span className="text-[9px] text-slate-400 font-bold uppercase">Paradas</span>
+                              <span className="text-xs font-bold text-amber-600">{tempoParadas > 0 ? `${tempoParadas}m` : "-"}</span>
+                              {tempoParadas > 0 && <span className="text-[9px] text-amber-500 font-semibold truncate" title={l.paradas.map((p: any) => p.causaDescricao || p.motivo).filter(Boolean).join(", ")}>{l.paradas.map((p: any) => p.causaDescricao || p.motivo).filter(Boolean).join(", ")}</span>}
+                            </div>
+                          </div>
+
+                          <div className="flex justify-between items-center mt-1">
+                            <div className="text-[10px] text-slate-500 font-medium bg-slate-50 px-2 py-0.5 rounded border border-slate-100 flex items-center gap-1">
+                              <Clock size={10} /> {l.horaInicio} às {l.horaFim} ({duracaoMin}m)
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </>
               )}
             </CardContent>
           </Card>

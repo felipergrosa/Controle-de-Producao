@@ -5,6 +5,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Edit2, Trash2, History, X } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
+import Swal from "sweetalert2";
 
 export default function ProductsQuery() {
   const [searchQuery, setSearchQuery] = useState("");
@@ -86,7 +87,18 @@ export default function ProductsQuery() {
   }, []);
 
   const handleDelete = async (productId: string) => {
-    if (confirm("Tem certeza que deseja deletar este produto?")) {
+    const result = await Swal.fire({
+      title: "Tem certeza?",
+      text: "Deseja realmente deletar este produto?",
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonColor: "#4f46e5",
+      cancelButtonColor: "#ef4444",
+      confirmButtonText: "Sim, deletar!",
+      cancelButtonText: "Cancelar"
+    });
+
+    if (result.isConfirmed) {
       await deleteProductMutation.mutateAsync({ id: productId });
     }
   };

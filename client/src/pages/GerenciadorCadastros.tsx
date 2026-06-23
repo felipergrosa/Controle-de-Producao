@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from "react";
+import Swal from "sweetalert2";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -605,8 +606,18 @@ export default function GerenciadorCadastros() {
                                   size="icon" 
                                   variant="ghost" 
                                   className="h-8 w-8 text-red-500 hover:text-red-700"
-                                  onClick={() => {
-                                    if(window.confirm("Deseja realmente apagar este registro?")) {
+                                  onClick={async () => {
+                                    const res = await Swal.fire({
+                                      title: "Tem certeza?",
+                                      text: "Deseja realmente apagar este registro?",
+                                      icon: "warning",
+                                      showCancelButton: true,
+                                      confirmButtonColor: "#4f46e5",
+                                      cancelButtonColor: "#ef4444",
+                                      confirmButtonText: "Sim, apagar",
+                                      cancelButtonText: "Cancelar"
+                                    });
+                                    if(res.isConfirmed) {
                                       deleteOp.mutate({ id: o.id });
                                     }
                                   }}
@@ -770,8 +781,18 @@ export default function GerenciadorCadastros() {
                                   size="icon" 
                                   variant="ghost" 
                                   className="h-8 w-8 text-red-500 hover:text-red-700"
-                                  onClick={() => {
-                                    if(window.confirm("Deseja realmente apagar este registro?")) {
+                                  onClick={async () => {
+                                    const res = await Swal.fire({
+                                      title: "Tem certeza?",
+                                      text: "Deseja realmente apagar este registro?",
+                                      icon: "warning",
+                                      showCancelButton: true,
+                                      confirmButtonColor: "#4f46e5",
+                                      cancelButtonColor: "#ef4444",
+                                      confirmButtonText: "Sim, apagar",
+                                      cancelButtonText: "Cancelar"
+                                    });
+                                    if(res.isConfirmed) {
                                       deleteTurno.mutate({ id: t.id });
                                     }
                                   }}
@@ -934,8 +955,18 @@ export default function GerenciadorCadastros() {
                                   size="icon" 
                                   variant="ghost" 
                                   className="h-8 w-8 text-red-500 hover:text-red-700"
-                                  onClick={() => {
-                                    if(window.confirm("Deseja realmente apagar este registro?")) {
+                                  onClick={async () => {
+                                    const res = await Swal.fire({
+                                      title: "Tem certeza?",
+                                      text: "Deseja realmente apagar este registro?",
+                                      icon: "warning",
+                                      showCancelButton: true,
+                                      confirmButtonColor: "#4f46e5",
+                                      cancelButtonColor: "#ef4444",
+                                      confirmButtonText: "Sim, apagar",
+                                      cancelButtonText: "Cancelar"
+                                    });
+                                    if(res.isConfirmed) {
                                       deleteCausa.mutate({ id: c.id });
                                     }
                                   }}
@@ -1098,8 +1129,18 @@ export default function GerenciadorCadastros() {
                                   size="icon" 
                                   variant="ghost" 
                                   className="h-8 w-8 text-red-500 hover:text-red-700"
-                                  onClick={() => {
-                                    if(window.confirm("Deseja realmente apagar este registro?")) {
+                                  onClick={async () => {
+                                    const res = await Swal.fire({
+                                      title: "Tem certeza?",
+                                      text: "Deseja realmente apagar este registro?",
+                                      icon: "warning",
+                                      showCancelButton: true,
+                                      confirmButtonColor: "#4f46e5",
+                                      cancelButtonColor: "#ef4444",
+                                      confirmButtonText: "Sim, apagar",
+                                      cancelButtonText: "Cancelar"
+                                    });
+                                    if(res.isConfirmed) {
                                       deleteMotivo.mutate({ id: m.id });
                                     }
                                   }}
@@ -1210,8 +1251,18 @@ export default function GerenciadorCadastros() {
                                       size="icon" 
                                       variant="ghost" 
                                       className="h-8 w-8 text-red-500 hover:text-red-700"
-                                      onClick={() => {
-                                        if(window.confirm("Deseja realmente inativar/apagar esta política?")) {
+                                      onClick={async () => {
+                                        const res = await Swal.fire({
+                                          title: "Tem certeza?",
+                                          text: "Deseja realmente inativar/apagar esta política?",
+                                          icon: "warning",
+                                          showCancelButton: true,
+                                          confirmButtonColor: "#4f46e5",
+                                          cancelButtonColor: "#ef4444",
+                                          confirmButtonText: "Sim, apagar",
+                                          cancelButtonText: "Cancelar"
+                                        });
+                                        if(res.isConfirmed) {
                                           deleteJornada.mutate({ id: p.id });
                                         }
                                       }}
