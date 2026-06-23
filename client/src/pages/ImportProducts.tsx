@@ -16,6 +16,11 @@ interface ParsedProduct {
   description: string;
   barcode?: string;
   photoUrl?: string;
+  pesoUnitarioG?: string;
+  diametroMm?: string;
+  espessuraMm?: string;
+  idealPecasHora?: number;
+  metaQuebraPct?: string;
 }
 
 interface ColumnMapping {
@@ -23,6 +28,11 @@ interface ColumnMapping {
   description?: number;
   barcode?: number;
   photoUrl?: number;
+  pesoUnitarioG?: number;
+  diametroMm?: number;
+  espessuraMm?: number;
+  idealPecasHora?: number;
+  metaQuebraPct?: number;
 }
 
 interface ImportResult {
@@ -80,6 +90,11 @@ export default function ImportProducts() {
         "Descrição": p.description,
         "Código de Barras": p.barcode || "",
         "URL da Imagem": p.photoUrl || "",
+        "Peso Unit.(g)": p.pesoUnitarioG ? Number(p.pesoUnitarioG) : "",
+        "Diâmetro (mm)": p.diametroMm ? Number(p.diametroMm) : "",
+        "Espessura (mm)": p.espessuraMm ? Number(p.espessuraMm) : "",
+        "Ideal (P/H)": p.idealPecasHora !== null ? Number(p.idealPecasHora) : "",
+        "Meta Quebra %": p.metaQuebraPct ? Number(p.metaQuebraPct) : "",
         "Total Produzido": p.totalProduced,
         "Criado em": p.createdAt ? new Date(p.createdAt).toLocaleDateString("pt-BR") : "",
         "Atualizado em": p.updatedAt ? new Date(p.updatedAt).toLocaleDateString("pt-BR") : "",
@@ -145,6 +160,11 @@ export default function ImportProducts() {
     const descriptionIdx = columnMapping.description;
     const barcodeIdx = columnMapping.barcode;
     const photoIdx = columnMapping.photoUrl;
+    const pesoIdx = columnMapping.pesoUnitarioG;
+    const diametroIdx = columnMapping.diametroMm;
+    const espessuraIdx = columnMapping.espessuraMm;
+    const idealIdx = columnMapping.idealPecasHora;
+    const metaQuebraIdx = columnMapping.metaQuebraPct;
 
     setIsImporting(true);
     setShowMapping(false);
@@ -175,6 +195,11 @@ export default function ImportProducts() {
             const barcode =
               barcodeIdx !== undefined ? row[barcodeIdx]?.toString().trim() || undefined : undefined;
             const photoUrl = photoIdx !== undefined ? row[photoIdx]?.toString().trim() : undefined;
+            const pesoUnitarioG = pesoIdx !== undefined && row[pesoIdx] !== undefined && row[pesoIdx] !== null ? String(row[pesoIdx]).trim().replace(",", ".") : undefined;
+            const diametroMm = diametroIdx !== undefined && row[diametroIdx] !== undefined && row[diametroIdx] !== null ? String(row[diametroIdx]).trim().replace(",", ".") : undefined;
+            const espessuraMm = espessuraIdx !== undefined && row[espessuraIdx] !== undefined && row[espessuraIdx] !== null ? String(row[espessuraIdx]).trim().replace(",", ".") : undefined;
+            const idealPecasHora = idealIdx !== undefined && row[idealIdx] !== undefined && row[idealIdx] !== null && !isNaN(Number(row[idealIdx])) ? Number(row[idealIdx]) : undefined;
+            const metaQuebraPct = metaQuebraIdx !== undefined && row[metaQuebraIdx] !== undefined && row[metaQuebraIdx] !== null ? String(row[metaQuebraIdx]).trim().replace(",", ".") : undefined;
 
             if (!code || !description) {
               errors++;
@@ -192,6 +217,11 @@ export default function ImportProducts() {
                 description,
                 photoUrl,
                 barcode,
+                pesoUnitarioG,
+                diametroMm,
+                espessuraMm,
+                idealPecasHora,
+                metaQuebraPct,
               });
               inserted++;
             } catch (err) {
@@ -558,6 +588,126 @@ export default function ImportProducts() {
                     </SelectContent>
                   </Select>
                 </div>
+                <div>
+                  <Label>Peso Unitário (g)</Label>
+                  <Select
+                    value={columnMapping?.pesoUnitarioG !== undefined ? columnMapping.pesoUnitarioG.toString() : "-1"}
+                    onValueChange={(v) =>
+                      setColumnMapping((prev) => ({
+                        ...(prev ?? {}),
+                        pesoUnitarioG: v !== "-1" ? parseInt(v, 10) : undefined,
+                      }))
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Nenhum" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="-1">Nenhum</SelectItem>
+                      {sheetHeaders.map((header, idx) => (
+                        <SelectItem key={idx} value={idx.toString()}>
+                          {header}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label>Diâmetro (mm)</Label>
+                  <Select
+                    value={columnMapping?.diametroMm !== undefined ? columnMapping.diametroMm.toString() : "-1"}
+                    onValueChange={(v) =>
+                      setColumnMapping((prev) => ({
+                        ...(prev ?? {}),
+                        diametroMm: v !== "-1" ? parseInt(v, 10) : undefined,
+                      }))
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Nenhum" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="-1">Nenhum</SelectItem>
+                      {sheetHeaders.map((header, idx) => (
+                        <SelectItem key={idx} value={idx.toString()}>
+                          {header}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label>Espessura (mm)</Label>
+                  <Select
+                    value={columnMapping?.espessuraMm !== undefined ? columnMapping.espessuraMm.toString() : "-1"}
+                    onValueChange={(v) =>
+                      setColumnMapping((prev) => ({
+                        ...(prev ?? {}),
+                        espessuraMm: v !== "-1" ? parseInt(v, 10) : undefined,
+                      }))
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Nenhum" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="-1">Nenhum</SelectItem>
+                      {sheetHeaders.map((header, idx) => (
+                        <SelectItem key={idx} value={idx.toString()}>
+                          {header}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label>Ideal Peças/Hora</Label>
+                  <Select
+                    value={columnMapping?.idealPecasHora !== undefined ? columnMapping.idealPecasHora.toString() : "-1"}
+                    onValueChange={(v) =>
+                      setColumnMapping((prev) => ({
+                        ...(prev ?? {}),
+                        idealPecasHora: v !== "-1" ? parseInt(v, 10) : undefined,
+                      }))
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Nenhum" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="-1">Nenhum</SelectItem>
+                      {sheetHeaders.map((header, idx) => (
+                        <SelectItem key={idx} value={idx.toString()}>
+                          {header}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label>Meta Máxima Quebra %</Label>
+                  <Select
+                    value={columnMapping?.metaQuebraPct !== undefined ? columnMapping.metaQuebraPct.toString() : "-1"}
+                    onValueChange={(v) =>
+                      setColumnMapping((prev) => ({
+                        ...(prev ?? {}),
+                        metaQuebraPct: v !== "-1" ? parseInt(v, 10) : undefined,
+                      }))
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Nenhum" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="-1">Nenhum</SelectItem>
+                      {sheetHeaders.map((header, idx) => (
+                        <SelectItem key={idx} value={idx.toString()}>
+                          {header}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
             </div>
 
@@ -572,6 +722,11 @@ export default function ImportProducts() {
                       <TableHead>DESCRIÇÃO</TableHead>
                       <TableHead>BARRAS</TableHead>
                       <TableHead>IMG_LINK</TableHead>
+                      <TableHead>PESO (g)</TableHead>
+                      <TableHead>DIÂMETRO</TableHead>
+                      <TableHead>ESPESSURA</TableHead>
+                      <TableHead>IDEAL (P/H)</TableHead>
+                      <TableHead>META QUEBRA %</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -597,6 +752,21 @@ export default function ImportProducts() {
                               Link
                             </a>
                           ) : "-"}
+                        </TableCell>
+                        <TableCell className="text-sm">
+                          {columnMapping?.pesoUnitarioG !== undefined ? row[columnMapping.pesoUnitarioG] : "-"}
+                        </TableCell>
+                        <TableCell className="text-sm">
+                          {columnMapping?.diametroMm !== undefined ? row[columnMapping.diametroMm] : "-"}
+                        </TableCell>
+                        <TableCell className="text-sm">
+                          {columnMapping?.espessuraMm !== undefined ? row[columnMapping.espessuraMm] : "-"}
+                        </TableCell>
+                        <TableCell className="text-sm">
+                          {columnMapping?.idealPecasHora !== undefined ? row[columnMapping.idealPecasHora] : "-"}
+                        </TableCell>
+                        <TableCell className="text-sm">
+                          {columnMapping?.metaQuebraPct !== undefined ? row[columnMapping.metaQuebraPct] : "-"}
                         </TableCell>
                       </TableRow>
                     ))}

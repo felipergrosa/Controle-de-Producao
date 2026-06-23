@@ -425,7 +425,7 @@ export const appRouter = router({
       .mutation(async ({ input, ctx }) => {
         const code = input.code.toUpperCase();
         const description = input.description.toUpperCase();
-        return await createOrUpdateProduct(
+        const result = await createOrUpdateProduct(
           code, 
           description, 
           input.photoUrl, 
@@ -436,6 +436,29 @@ export const appRouter = router({
           input.idealPecasHora,
           input.metaQuebraPct
         );
+
+        if (ctx.user && result) {
+          await logAudit(
+            ctx.user.id,
+            "create_or_update",
+            "product",
+            result.id,
+            code,
+            {
+              message: `Produto criado/atualizado: ${code} - ${description}`,
+              barcode: input.barcode || undefined,
+              pesoUnitarioG: input.pesoUnitarioG || undefined,
+              diametroMm: input.diametroMm || undefined,
+              espessuraMm: input.espessuraMm || undefined,
+              idealPecasHora: input.idealPecasHora || undefined,
+              metaQuebraPct: input.metaQuebraPct || undefined,
+            },
+            ctx.req.ip,
+            ctx.req.headers["user-agent"]
+          );
+        }
+
+        return result;
       }),
 
     create: protectedProcedure
@@ -455,7 +478,7 @@ export const appRouter = router({
       .mutation(async ({ input, ctx }) => {
         const code = input.code.toUpperCase();
         const description = input.description.toUpperCase();
-        return await createOrUpdateProduct(
+        const result = await createOrUpdateProduct(
           code, 
           description, 
           input.photoUrl, 
@@ -466,6 +489,29 @@ export const appRouter = router({
           input.idealPecasHora,
           input.metaQuebraPct
         );
+
+        if (ctx.user && result) {
+          await logAudit(
+            ctx.user.id,
+            "create",
+            "product",
+            result.id,
+            code,
+            {
+              message: `Produto criado: ${code} - ${description}`,
+              barcode: input.barcode || undefined,
+              pesoUnitarioG: input.pesoUnitarioG || undefined,
+              diametroMm: input.diametroMm || undefined,
+              espessuraMm: input.espessuraMm || undefined,
+              idealPecasHora: input.idealPecasHora || undefined,
+              metaQuebraPct: input.metaQuebraPct || undefined,
+            },
+            ctx.req.ip,
+            ctx.req.headers["user-agent"]
+          );
+        }
+
+        return result;
       }),
 
     update: protectedProcedure
@@ -492,13 +538,61 @@ export const appRouter = router({
         if (input.espessuraMm !== undefined) updates.espessuraMm = input.espessuraMm;
         if (input.idealPecasHora !== undefined) updates.idealPecasHora = input.idealPecasHora;
         if (input.metaQuebraPct !== undefined) updates.metaQuebraPct = input.metaQuebraPct;
-        return await updateProductByCode(input.code, updates);
+        
+        const result = await updateProductByCode(input.code, updates);
+
+        if (ctx.user && result) {
+          await logAudit(
+            ctx.user.id,
+            "update",
+            "product",
+            result.id,
+            input.code,
+            {
+              message: `Produto atualizado: ${input.code} - ${result.description}`,
+              updates: {
+                description: input.description,
+                barcode: input.barcode,
+                pesoUnitarioG: input.pesoUnitarioG,
+                diametroMm: input.diametroMm,
+                espessuraMm: input.espessuraMm,
+                idealPecasHora: input.idealPecasHora,
+                metaQuebraPct: input.metaQuebraPct,
+              }
+            },
+            ctx.req.ip,
+            ctx.req.headers["user-agent"]
+          );
+        }
+
+        return result;
       }),
 
     delete: protectedProcedure
       .input(z.object({ id: z.string() }))
       .mutation(async ({ input, ctx }) => {
+        const db = await getDb();
+        if (!db) throw new Error("Database not available");
+
+        const product = await db.select().from(products).where(eq(products.id, input.id)).limit(1);
+
         await deleteProduct(input.id);
+
+        if (ctx.user && product.length > 0) {
+          await logAudit(
+            ctx.user.id,
+            "delete",
+            "product",
+            input.id,
+            product[0].code,
+            {
+              message: `Produto excluído: ${product[0].code} - ${product[0].description}`,
+            },
+            ctx.req.ip,
+            ctx.req.headers["user-agent"]
+          );
+        }
+
         return { success: true };
       }),
 

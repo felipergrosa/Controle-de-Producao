@@ -273,7 +273,6 @@ export default function AuditLogs() {
   const [selectedPreset, setSelectedPreset] = useState<DatePreset>("today");
 
   const [periodInputValue, setPeriodInputValue] = useState<string>(() => formatRangeLabel(dateRange));
-  const [isPeriodEditable, setIsPeriodEditable] = useState(false);
   const [isPopoverOpen, setIsPopoverOpen] = useState(false);
 
   const periodInputRef = useRef<HTMLInputElement>(null);
@@ -282,7 +281,6 @@ export default function AuditLogs() {
     if (preset === "custom") {
       setSelectedPreset("custom");
       setIsPopoverOpen(false);
-      setIsPeriodEditable(true);
       setTimeout(() => {
         periodInputRef.current?.focus();
         periodInputRef.current?.select();
@@ -294,7 +292,6 @@ export default function AuditLogs() {
     setSelectedPreset(preset);
     if (range) {
       setDateRange(range);
-      setIsPeriodEditable(false);
       setIsPopoverOpen(false);
     }
   };
@@ -303,64 +300,46 @@ export default function AuditLogs() {
     setSelectedPreset("custom");
     setDateRange(range);
     if (range?.from && range?.to) {
-      setIsPeriodEditable(false);
       setIsPopoverOpen(false);
     }
   };
 
   useEffect(() => {
-    if (!isPeriodEditable) {
+    if (document.activeElement !== periodInputRef.current) {
       setPeriodInputValue(formatRangeLabel(dateRange));
     }
-  }, [dateRange, isPeriodEditable]);
-
-  const handlePeriodDoubleClick = (event: React.MouseEvent<HTMLInputElement>) => {
-    event.preventDefault();
-    setIsPopoverOpen(false);
-    setIsPeriodEditable(true);
-    setSelectedPreset("custom");
-    setTimeout(() => {
-      periodInputRef.current?.focus();
-      periodInputRef.current?.select();
-    }, 0);
-  };
+  }, [dateRange]);
 
   const handlePeriodInputChange = (value: string) => {
-    if (!isPeriodEditable) return;
     setPeriodInputValue(applyPeriodMask(value));
   };
 
   const commitPeriodInput = () => {
-    if (!isPeriodEditable) return;
-
     const trimmed = periodInputValue.trim();
     if (!trimmed) {
       setDateRange(undefined);
-      setIsPeriodEditable(false);
       return;
     }
 
     const parsed = parsePeriodInput(periodInputValue);
     if (!parsed) {
       setPeriodInputValue(formatRangeLabel(dateRange));
-      setIsPeriodEditable(false);
       return;
     }
 
     setDateRange(parsed);
     setSelectedPreset("custom");
-    setIsPeriodEditable(false);
   };
 
   const handlePeriodKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
-    if (!isPeriodEditable) return;
     if (event.key === "Enter") {
       event.preventDefault();
       commitPeriodInput();
+      periodInputRef.current?.blur();
     } else if (event.key === "Escape") {
       event.preventDefault();
       setPeriodInputValue(formatRangeLabel(dateRange));
-      setIsPeriodEditable(false);
+      periodInputRef.current?.blur();
     }
   };
 
@@ -394,7 +373,6 @@ export default function AuditLogs() {
     setSearchQuery("");
     setDateRange(todayRange);
     setSelectedPreset("today");
-    setIsPeriodEditable(false);
   };
 
   const handleExportCSV = () => {
@@ -478,12 +456,7 @@ export default function AuditLogs() {
                 <Label htmlFor="period-input">Período</Label>
                 <Popover
                   open={isPopoverOpen}
-                  onOpenChange={(open) => {
-                    setIsPopoverOpen(open);
-                    if (open) {
-                      setIsPeriodEditable(false);
-                    }
-                  }}
+                  onOpenChange={setIsPopoverOpen}
                 >
                   <PopoverAnchor asChild>
                     <div className="relative mt-1">
@@ -491,10 +464,8 @@ export default function AuditLogs() {
                         id="period-input"
                         ref={periodInputRef}
                         value={periodInputValue}
-                        readOnly={!isPeriodEditable}
                         maxLength={23}
                         placeholder="Selecione o período"
-                        onDoubleClick={handlePeriodDoubleClick}
                         onBlur={commitPeriodInput}
                         onKeyDown={handlePeriodKeyDown}
                         onChange={(event) => handlePeriodInputChange(event.target.value)}
@@ -544,7 +515,6 @@ export default function AuditLogs() {
                             onClick={() => {
                               setDateRange(undefined);
                               setSelectedPreset("custom");
-                              setIsPeriodEditable(false);
                               setPeriodInputValue("");
                               setIsPopoverOpen(false);
                             }}
@@ -557,7 +527,6 @@ export default function AuditLogs() {
                               const range = getTodayRange();
                               setDateRange(range);
                               setSelectedPreset("today");
-                              setIsPeriodEditable(false);
                               setIsPopoverOpen(false);
                             }}
                           >
@@ -568,7 +537,7 @@ export default function AuditLogs() {
                     </div>
                   </PopoverContent>
                 </Popover>
-                <p className="mt-1 text-xs text-muted-foreground">Clique duas vezes para editar manualmente no formato DD/MM/AAAA - DD/MM/AAAA.</p>
+                <p className="mt-1 text-xs text-muted-foreground">Digite o período no formato DDMMAAAA para preenchimento automático.</p>
               </div>
               <div>
                 <Label htmlFor="search">Buscar</Label>
