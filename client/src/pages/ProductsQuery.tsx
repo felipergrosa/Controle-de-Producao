@@ -1,8 +1,10 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useMemo } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Edit2, Trash2, History, X } from "lucide-react";
+import { Edit2, Trash2, History, X, List, LayoutGrid } from "lucide-react";
+import { DataGrid, renderTextEditor as textEditor } from 'react-data-grid';
+import 'react-data-grid/lib/styles.css';
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import Swal from "sweetalert2";
@@ -15,6 +17,7 @@ export default function ProductsQuery() {
   const [showHistoryModal, setShowHistoryModal] = useState(false);
   const [editingProduct, setEditingProduct] = useState<any>(null);
   const [showEditModal, setShowEditModal] = useState(false);
+  const [viewMode, setViewMode] = useState<"cards" | "grid">("cards");
 
   // Search both code and description
   const searchResults = trpc.products.search.useQuery(
@@ -50,7 +53,6 @@ export default function ProductsQuery() {
 
   const updateProductMutation2 = trpc.products.update.useMutation({
     onSuccess: () => {
-      toast.success("Produto atualizado com sucesso");
       setShowEditModal(false);
       setEditingProduct(null);
       // Invalidar queries ao invés de refetch direto
@@ -70,12 +72,22 @@ export default function ProductsQuery() {
   );
 
   // Combine results
-  const allResults = searchQuery.length >= 2
-    ? Array.from(new Map([
-        ...((searchResults.data || []) as any[]).map((p: any) => [p.id, p] as const),
-        ...((searchByDesc.data || []) as any[]).map((p: any) => [p.id, p] as const),
-      ]).values())
-    : [];
+  const allResults = useMemo(() => {
+    return searchQuery.length >= 2
+      ? Array.from(new Map([
+          ...((searchResults.data || []) as any[]).map((p: any) => [p.id, p] as const),
+          ...((searchByDesc.data || []) as any[]).map((p: any) => [p.id, p] as const),
+        ]).values())
+      : [];
+  }, [searchQuery, searchResults.data, searchByDesc.data]);
+
+  const [gridRows, setGridRows] = useState<any[]>([]);
+  const [modifiedRows, setModifiedRows] = useState<Record<string, any>>({});
+  const [isSavingGrid, setIsSavingGrid] = useState(false);
+
+  useEffect(() => {
+    setGridRows(allResults.map((r: any) => modifiedRows[r.id] || r));
+  }, [allResults]);
 
   const isLoading = searchResults.isLoading || searchByDesc.isLoading;
 
@@ -132,6 +144,105 @@ export default function ProductsQuery() {
       idealPecasHora: editingProduct.idealPecasHora ? Number(editingProduct.idealPecasHora) : null,
       metaQuebraPct: editingProduct.metaQuebraPct || null,
     });
+    toast.success("Produto atualizado com sucesso");
+  };
+
+  // Funções da Planilha
+  const getCellClass = (columnKey: string) => (row: any) => {
+    const originalRow = allResults.find((r: any) => r.id === row.id);
+    if (!originalRow) return undefined;
+    const originalValue = originalRow[columnKey] ?? "";
+    const currentValue = row[columnKey] ?? "";
+    if (String(originalValue) !== String(currentValue)) {
+      return "!bg-yellow-100 dark:!bg-yellow-950/40 !text-yellow-900 dark:!text-yellow-100 font-medium";
+    }
+    return undefined;
+  };
+
+  const columns = [
+    { key: "code", name: "Código", renderEditCell: textEditor, resizable: true, width: 200, cellClass: getCellClass("code") },
+    { key: "description", name: "Descrição", renderEditCell: textEditor, resizable: true, width: 350, cellClass: getCellClass("description") },
+    { key: "barcode", name: "Cód. Barras", renderEditCell: textEditor, resizable: true, cellClass: getCellClass("barcode") },
+    { key: "pesoUnitarioG", name: "Peso Unit.(g)", renderEditCell: textEditor, resizable: true, cellClass: getCellClass("pesoUnitarioG") },
+    { key: "idealPecasHora", name: "Ideal (P/H)", renderEditCell: textEditor, resizable: true, cellClass: getCellClass("idealPecasHora") },
+    { key: "metaQuebraPct", name: "Meta Quebra %", renderEditCell: textEditor, resizable: true, cellClass: getCellClass("metaQuebraPct") },
+    { key: "diametroMm", name: "Diâmetro (mm)", renderEditCell: textEditor, resizable: true, cellClass: getCellClass("diametroMm") },
+    { key: "espessuraMm", name: "Espessura (mm)", renderEditCell: textEditor, resizable: true, cellClass: getCellClass("espessuraMm") },
+  ];
+
+  const handleRowsChange = (newRows: any[], { indexes }: any) => {
+    setGridRows(newRows);
+    const newModified = { ...modifiedRows };
+    for (const i of indexes) {
+      const row = newRows[i];
+      newModified[row.id] = row;
+    }
+    setModifiedRows(newModified);
+  };
+
+  const handleFill = ({ columnKey, sourceRow, targetRow }: any) => {
+    return { ...targetRow, [columnKey]: sourceRow[columnKey] };
+  };
+
+  const handleSaveGrid = async () => {
+    const rowsToSave = Object.values(modifiedRows);
+    if (rowsToSave.length === 0) return;
+
+    const result = await Swal.fire({
+      title: "Confirmar Gravação?",
+      text: `Deseja realmente salvar as alterações de ${rowsToSave.length} produto(s)?`,
+      icon: "question",
+      showCancelButton: true,
+      confirmButtonColor: "#10b981",
+      cancelButtonColor: "#ef4444",
+      confirmButtonText: "Sim, salvar!",
+      cancelButtonText: "Cancelar"
+    });
+
+    if (!result.isConfirmed) return;
+
+    setIsSavingGrid(true);
+    let successCount = 0;
+    try {
+      for (const row of rowsToSave) {
+        await updateProductMutation2.mutateAsync({
+          code: row.code,
+          description: row.description?.toUpperCase() || "",
+          photoUrl: row.photoUrl || null,
+          barcode: row.barcode?.trim() || null,
+          pesoUnitarioG: row.pesoUnitarioG ? String(Number(row.pesoUnitarioG)) : null,
+          diametroMm: row.diametroMm || null,
+          espessuraMm: row.espessuraMm || null,
+          idealPecasHora: row.idealPecasHora ? Number(row.idealPecasHora) : null,
+          metaQuebraPct: row.metaQuebraPct || null,
+        });
+        successCount++;
+      }
+      
+      await Promise.all([
+        utils.products.search.invalidate(),
+        utils.products.searchByDescription.invalidate(),
+      ]);
+      
+      setModifiedRows({});
+
+      await Swal.fire({
+        title: "Salvo!",
+        text: `${successCount} produto(s) atualizado(s) com sucesso!`,
+        icon: "success",
+        confirmButtonColor: "#4f46e5"
+      });
+    } catch (e) {
+      console.error("Erro no save em lote", e);
+      Swal.fire({
+        title: "Erro ao Salvar",
+        text: "Ocorreu um erro ao salvar alguns produtos. Verifique os dados e tente novamente.",
+        icon: "error",
+        confirmButtonColor: "#ef4444"
+      });
+    } finally {
+      setIsSavingGrid(false);
+    }
   };
 
   const toDisplay = (val: string | number | null | undefined) => {
@@ -221,6 +332,27 @@ export default function ProductsQuery() {
         )}
       </div>
 
+      <div className="flex items-center gap-4">
+        <div className="flex items-center gap-2">
+          <Button variant={viewMode === "cards" ? "default" : "outline"} onClick={() => setViewMode("cards")} className="gap-2">
+            <LayoutGrid size={16} /> Cards
+          </Button>
+          <Button variant={viewMode === "grid" ? "default" : "outline"} onClick={() => setViewMode("grid")} className="gap-2">
+            <List size={16} /> Editar em Planilha
+          </Button>
+        </div>
+
+        {Object.keys(modifiedRows).length > 0 && viewMode === "grid" && (
+          <Button 
+            onClick={handleSaveGrid} 
+            disabled={isSavingGrid}
+            className="bg-green-600 hover:bg-green-700 text-white gap-2"
+          >
+            {isSavingGrid ? "Salvando..." : `Salvar Alterações (${Object.keys(modifiedRows).length})`}
+          </Button>
+        )}
+      </div>
+
       {/* Results */}
       {searchQuery.length < 2 ? (
         <div className="text-center py-12 text-muted-foreground">
@@ -233,6 +365,17 @@ export default function ProductsQuery() {
       ) : allResults.length === 0 ? (
         <div className="text-center py-12 text-muted-foreground">
           Nenhum produto encontrado
+        </div>
+      ) : viewMode === "grid" ? (
+        <div className="h-[650px] bg-white border border-slate-200 rounded-lg shadow-sm">
+          <DataGrid 
+            columns={columns} 
+            rows={gridRows} 
+            onRowsChange={handleRowsChange} 
+            onFill={handleFill}
+            className="rdg-light h-full"
+            rowKeyGetter={(row) => row.id}
+          />
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
