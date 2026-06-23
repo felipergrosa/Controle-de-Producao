@@ -315,6 +315,7 @@ export default function LancamentoRepuxados() {
   const [tempParadaCausaId, setTempParadaCausaId] = useState("");
 
   // Modais de Cadastro Rápido
+  const [showHelpModal, setShowHelpModal] = useState(false);
   const [showRepuxadorModal, setShowRepuxadorModal] = useState(false);
   const [newRepuxadorNome, setNewRepuxadorNome] = useState("");
   const [newRepuxadorMatricula, setNewRepuxadorMatricula] = useState("");
@@ -840,13 +841,29 @@ export default function LancamentoRepuxados() {
   }, [productId, produtosQuery.data]);
 
   // Cálculos Automáticos
-  const tempoDuraçãoMinutos = useMemo(() => {
-    if (!horaInicio || !horaFim) return 0;
+  const { tempoDuraçãoMinutos, descontoAlmocoMin } = useMemo(() => {
+    if (!horaInicio || !horaFim) return { tempoDuraçãoMinutos: 0, descontoAlmocoMin: 0 };
     const [h1, m1] = horaInicio.split(":").map(Number);
     const [h2, m2] = horaFim.split(":").map(Number);
-    let diff = (h2 * 60 + m2) - (h1 * 60 + m1);
-    if (diff < 0) diff += 24 * 60; // Passagem de dia
-    return diff;
+    let startMins = h1 * 60 + m1;
+    let endMins = h2 * 60 + m2;
+    if (endMins < startMins) endMins += 24 * 60; // Passagem de dia
+
+    let diff = endMins - startMins;
+    
+    // Desconto automático do almoço (12:00 às 13:00 = 720 às 780 min)
+    const lunchStart = 12 * 60;
+    const lunchEnd = 13 * 60;
+    const overlapStart = Math.max(startMins, lunchStart);
+    const overlapEnd = Math.min(endMins, lunchEnd);
+    
+    let lunchDiscount = 0;
+    if (overlapStart < overlapEnd) {
+      lunchDiscount = overlapEnd - overlapStart;
+      diff -= lunchDiscount;
+    }
+    
+    return { tempoDuraçãoMinutos: diff, descontoAlmocoMin: lunchDiscount };
   }, [horaInicio, horaFim]);
 
   const tempoParadasTotal = useMemo(() => {
@@ -1086,6 +1103,9 @@ export default function LancamentoRepuxados() {
                 <CardTitle className="text-base sm:text-lg flex items-center gap-2">
                   <FileText className="h-5 w-5 text-indigo-500 flex-shrink-0" />
                   <span className="truncate">{editingId ? "Editar Lançamento" : "Registrar Lote de Produção"}</span>
+                  <button type="button" onClick={() => setShowHelpModal(true)} className="text-slate-400 hover:text-indigo-600 transition-colors" title="Como lançar?">
+                    <HelpCircle className="h-4 w-4" />
+                  </button>
                 </CardTitle>
                 <div className="flex items-center gap-2">
                   {editingId && (
@@ -1127,7 +1147,10 @@ export default function LancamentoRepuxados() {
                 {/* Produto */}
                 <div className="space-y-2">
                   <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between mb-1">
-                    <Label className="text-base font-semibold">Produto Repuxado *</Label>
+                    <Label className="text-base font-semibold flex items-center">
+                      <span>Produto Repuxado *</span>
+                      <HelpTooltip content="Busque o produto por código, descrição ou escaneando o código de barras." />
+                    </Label>
                     {!productId && (
                       <>
                         <div className="hidden md:flex items-center gap-1.5">
@@ -1664,7 +1687,14 @@ export default function LancamentoRepuxados() {
                 {/* Painel de Cálculo inline (Micro-Interações) */}
                 {selectedProduct && pecasProduzidas && (
                   <div className="bg-indigo-50/50 border border-indigo-100 p-4 rounded-md space-y-2 animate-fadeIn">
-                    <div className="text-xs font-bold uppercase tracking-wider text-indigo-700">Resumo Estimado Lote</div>
+                    <div className="flex items-center justify-between">
+                      <div className="text-xs font-bold uppercase tracking-wider text-indigo-700">Resumo Estimado Lote</div>
+                      {descontoAlmocoMin > 0 && (
+                        <div className="text-[10px] bg-blue-100 text-blue-700 font-bold px-2 py-0.5 rounded border border-blue-200 shadow-xs">
+                          -{descontoAlmocoMin} min (Almoço)
+                        </div>
+                      )}
+                    </div>
                     <div className="grid grid-cols-2 gap-2 text-sm text-slate-700">
                       <div>KG Bons: <strong>{(calcKgTotal - calcKgQuebra).toFixed(2)} kg</strong></div>
                       <div>KG Quebrado: <strong>{calcKgQuebra.toFixed(2)} kg</strong></div>
@@ -1838,6 +1868,17 @@ export default function LancamentoRepuxados() {
                           const minFim = timeToMinutes(l.horaFim);
                           let duracaoMin = minFim - minInicio;
                           if (duracaoMin < 0) duracaoMin += 24 * 60;
+                          
+                          const lunchStart = 12 * 60;
+                          const lunchEnd = 13 * 60;
+                          const overlapStart = Math.max(minInicio, lunchStart);
+                          const overlapEnd = Math.min(minFim, lunchEnd);
+                          let lunchDiscount = 0;
+                          if (overlapStart < overlapEnd) {
+                            lunchDiscount = overlapEnd - overlapStart;
+                            duracaoMin -= lunchDiscount;
+                          }
+
                           const tempoParadas = l.paradas.reduce((acc: number, cur: any) => acc + cur.tempoMinutos, 0);
 
                           return (
@@ -1871,7 +1912,9 @@ export default function LancamentoRepuxados() {
                               </TableCell>
                               <TableCell>
                                 <div className="text-sm">{l.horaInicio} às {l.horaFim}</div>
-                                <div className="text-xs text-muted-foreground">({duracaoMin} min)</div>
+                                <div className="text-xs text-muted-foreground flex items-center gap-1">
+                                  ({duracaoMin} min) {lunchDiscount > 0 && <span className="text-[10px] bg-blue-100 text-blue-700 font-bold px-1 rounded shadow-xs border border-blue-200">-{lunchDiscount}m</span>}
+                                </div>
                               </TableCell>
                               <TableCell className="text-right">
                                 <div className="font-semibold">{l.pecasProduzidas} pçs</div>
@@ -1940,6 +1983,17 @@ export default function LancamentoRepuxados() {
                       const minFim = timeToMinutes(l.horaFim);
                       let duracaoMin = minFim - minInicio;
                       if (duracaoMin < 0) duracaoMin += 24 * 60;
+
+                      const lunchStart = 12 * 60;
+                      const lunchEnd = 13 * 60;
+                      const overlapStart = Math.max(minInicio, lunchStart);
+                      const overlapEnd = Math.min(minFim, lunchEnd);
+                      let lunchDiscount = 0;
+                      if (overlapStart < overlapEnd) {
+                        lunchDiscount = overlapEnd - overlapStart;
+                        duracaoMin -= lunchDiscount;
+                      }
+
                       const tempoParadas = l.paradas.reduce((acc: number, cur: any) => acc + cur.tempoMinutos, 0);
 
                       return (
@@ -1988,6 +2042,7 @@ export default function LancamentoRepuxados() {
                           <div className="flex justify-between items-center mt-1">
                             <div className="text-[10px] text-slate-500 font-medium bg-slate-50 px-2 py-0.5 rounded border border-slate-100 flex items-center gap-1">
                               <Clock size={10} /> {l.horaInicio} às {l.horaFim} ({duracaoMin}m)
+                              {lunchDiscount > 0 && <span className="text-[9px] bg-blue-100 text-blue-700 font-bold px-1 rounded border border-blue-200">-{lunchDiscount}m</span>}
                             </div>
                           </div>
                         </div>
@@ -1999,7 +2054,48 @@ export default function LancamentoRepuxados() {
             </CardContent>
           </Card>
         </div>
-      </div>
+        </div>
+
+      {/* Modal de Ajuda / Regras de Negócio */}
+      <Dialog open={showHelpModal} onOpenChange={setShowHelpModal}>
+        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-indigo-700">
+              <HelpCircle className="h-5 w-5" />
+              Como registrar um lote de produção?
+            </DialogTitle>
+            <DialogDescription>
+              Aprenda as regras de negócio e boas práticas para evitar erros de cálculo e manter o painel de OEE correto.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-6 text-sm text-slate-700 mt-2">
+            
+            <div className="space-y-2">
+              <h3 className="font-bold text-slate-800 border-b pb-1 flex items-center gap-1.5"><CalendarIcon size={14}/> Horário de Almoço</h3>
+              <p>O sistema deduz <b>automaticamente</b> o horário de almoço padrão (12:00 às 13:00). Se o turno do operador cruzar este horário (ex: 07:40 a 17:30), você <b>não precisa</b> registrar uma "Parada de Máquina" para o almoço. A eficiência e os horários já serão calculados ignorando esses 60 minutos.</p>
+            </div>
+
+            <div className="space-y-2">
+              <h3 className="font-bold text-slate-800 border-b pb-1 flex items-center gap-1.5"><CheckCircle2 size={14}/> Peças Produzidas vs Quebradas</h3>
+              <ul className="list-disc pl-5 space-y-1">
+                <li><b>Peças Produzidas:</b> Refere-se à quantidade BRUTA repuxada na máquina (boas + ruins). Se ele puxou 100 discos e 2 racharam, você coloca <b>100 em Produzidas</b> e <b>2 em Quebradas</b>. O sistema calculará e constatará que apenas 98 ficaram boas.</li>
+                <li>Sempre que houver quebras (refugo), você será obrigado a informar a "Causa da Quebra" principal para o cálculo do Diagrama de Pareto.</li>
+              </ul>
+            </div>
+
+            <div className="space-y-2">
+              <h3 className="font-bold text-slate-800 border-b pb-1 flex items-center gap-1.5"><Clock size={14}/> Paradas de Máquina</h3>
+              <p>São tempos em que a máquina deveria estar operando mas ficou inoperante devido a gargalos reais (Ex: Manutenção na máquina, Falta de energia, Limpeza intensiva, Falta de matéria-prima). As paradas são subtraídas do tempo total para que não prejudiquem o cálculo de Performance do operador, mas causam impacto negativo no índice de "Disponibilidade" do OEE.</p>
+            </div>
+
+            <div className="space-y-2">
+              <h3 className="font-bold text-slate-800 border-b pb-1 flex items-center gap-1.5"><Scale size={14}/> Cálculo de Eficiência</h3>
+              <p>A "Eficiência" exibida no <b>Resumo Estimado</b> compara a performance atual do repuxador com a meta <b>Ideal P/H (Peças por Hora)</b> cadastrada para aquele produto. Exibir um valor vermelho ou laranja indica que o lote foi produzido num ritmo abaixo da meta esperada pela indústria.</p>
+            </div>
+
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Modal Novo Repuxador */}
       <Dialog open={showRepuxadorModal} onOpenChange={setShowRepuxadorModal}>
