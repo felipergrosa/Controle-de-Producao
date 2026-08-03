@@ -126,3 +126,7 @@ screenshots/
 page_texts/
 *.webp
 *.log
+
+# Permissoes e credenciais locais
+/perms/
+perms/
