@@ -383,9 +383,9 @@ export async function getDashboardStats(
     const pesoG = Number(row.pesoUnitarioG || 0);
     const idealPH = Number(row.idealPecasHora || 0);
     
-    const pecasBons = row.pecasProduzidas - row.pecasQuebradas;
+    const pecasBons = Math.max(0, row.pecasProduzidas - row.pecasQuebradas);
     
-    totalPecasProduzidas += row.pecasProduzidas;
+    totalPecasProduzidas += Math.max(row.pecasProduzidas, row.pecasQuebradas);
     totalPecasQuebradas += row.pecasQuebradas;
     
     // KG produzido = Peças Produzidas * Peso Unitário (convertido de g para kg)
@@ -494,7 +494,7 @@ export async function getDashboardStats(
       };
     }
     
-    rankingRepuxadores[idRepuxador].totalPecas += row.pecasProduzidas;
+    rankingRepuxadores[idRepuxador].totalPecas += Math.max(row.pecasProduzidas, row.pecasQuebradas);
     rankingRepuxadores[idRepuxador].totalQuebradas += row.pecasQuebradas;
     rankingRepuxadores[idRepuxador].totalKg += kgProd;
     rankingRepuxadores[idRepuxador].totalKgQuebrado += kgQueb;
@@ -567,7 +567,7 @@ export async function getDashboardStats(
     if (!diario[key]) {
       diario[key] = { data: key, pecas: 0, quebra: 0, kg: 0, quebraPct: 0 };
     }
-    diario[key].pecas += row.pecasProduzidas;
+    diario[key].pecas += Math.max(row.pecasProduzidas, row.pecasQuebradas);
     diario[key].quebra += row.pecasQuebradas;
     diario[key].kg += kgProd;
   }
@@ -610,7 +610,7 @@ export async function getDashboardStats(
         quebraPct: 0
       };
     }
-    rankingProdutos[prodId].totalPecas += row.pecasProduzidas;
+    rankingProdutos[prodId].totalPecas += Math.max(row.pecasProduzidas, row.pecasQuebradas);
     rankingProdutos[prodId].totalKg += kgProd;
     rankingProdutos[prodId].totalQuebradas += row.pecasQuebradas;
   }

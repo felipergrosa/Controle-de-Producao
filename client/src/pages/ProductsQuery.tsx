@@ -130,8 +130,18 @@ export default function ProductsQuery() {
       toast.error("Código e Descrição são obrigatórios");
       return;
     }
-    // Converter peso em kg de volta para gramas antes de salvar no banco
-    const pesoG = editingProduct.pesoUnitarioG ? String(Number(editingProduct.pesoUnitarioG) * 1000) : null;
+    // Converter peso em kg de volta para gramas antes de salvar no banco, tratando decimais com ponto
+    const cleanPeso = editingProduct.pesoUnitarioG ? String(editingProduct.pesoUnitarioG).replace(",", ".") : null;
+    const pesoG = cleanPeso && !isNaN(Number(cleanPeso)) ? String((Number(cleanPeso) * 1000).toFixed(3)) : null;
+
+    const cleanDiam = editingProduct.diametroMm ? String(editingProduct.diametroMm).replace(",", ".") : null;
+    const finalDiam = cleanDiam && !isNaN(Number(cleanDiam)) ? String(Number(cleanDiam).toFixed(3)) : null;
+
+    const cleanEsp = editingProduct.espessuraMm ? String(editingProduct.espessuraMm).replace(",", ".") : null;
+    const finalEsp = cleanEsp && !isNaN(Number(cleanEsp)) ? String(Number(cleanEsp).toFixed(2)) : null;
+
+    const cleanMeta = editingProduct.metaQuebraPct ? String(editingProduct.metaQuebraPct).replace(",", ".") : null;
+    const finalMeta = cleanMeta && !isNaN(Number(cleanMeta)) ? String(Number(cleanMeta).toFixed(2)) : null;
 
     await updateProductMutation2.mutateAsync({
       code: editingProduct.code,
@@ -139,12 +149,12 @@ export default function ProductsQuery() {
       photoUrl: editingProduct.photoUrl,
       barcode: editingProduct.barcode?.trim() || null,
       pesoUnitarioG: pesoG,
-      diametroMm: editingProduct.diametroMm || null,
-      espessuraMm: editingProduct.espessuraMm || null,
+      diametroMm: finalDiam,
+      espessuraMm: finalEsp,
       idealPecasHora: editingProduct.idealPecasHora ? Number(editingProduct.idealPecasHora) : null,
-      metaQuebraPct: editingProduct.metaQuebraPct || null,
+      metaQuebraPct: finalMeta,
     });
-    toast.success("Produto atualizado com sucesso");
+    toast.success("Produto updated com sucesso");
   };
 
   // Funções da Planilha
@@ -166,17 +176,46 @@ export default function ProductsQuery() {
     { key: "pesoUnitarioG", name: "Peso Unit.(g)", renderEditCell: textEditor, resizable: true, cellClass: getCellClass("pesoUnitarioG") },
     { key: "idealPecasHora", name: "Ideal (P/H)", renderEditCell: textEditor, resizable: true, cellClass: getCellClass("idealPecasHora") },
     { key: "metaQuebraPct", name: "Meta Quebra %", renderEditCell: textEditor, resizable: true, cellClass: getCellClass("metaQuebraPct") },
-    { key: "diametroMm", name: "Diâmetro (mm)", renderEditCell: textEditor, resizable: true, cellClass: getCellClass("diametroMm") },
+    { key: "diametroMm", name: "Diâmetro (m)", renderEditCell: textEditor, resizable: true, cellClass: getCellClass("diametroMm") },
     { key: "espessuraMm", name: "Espessura (mm)", renderEditCell: textEditor, resizable: true, cellClass: getCellClass("espessuraMm") },
   ];
 
   const handleRowsChange = (newRows: any[], { indexes }: any) => {
-    setGridRows(newRows);
+    const updatedRows = [...newRows];
     const newModified = { ...modifiedRows };
+
     for (const i of indexes) {
-      const row = newRows[i];
+      const row = { ...updatedRows[i] };
+      
+      const dStr = row.diametroMm ? String(row.diametroMm).replace(",", ".") : "0";
+      const eStr = row.espessuraMm ? String(row.espessuraMm).replace(",", ".") : "0";
+      const d = Number(dStr) || 0;
+      const eNum = Number(eStr) || 0;
+      
+      if (d > 0 && eNum > 0) {
+        const pesoKg = d * d * eNum * 2.14;
+        const pesoG = (pesoKg * 1000).toFixed(3);
+        row.pesoUnitarioG = pesoG;
+      }
+      
+      if (row.diametroMm !== undefined && row.diametroMm !== null) {
+        row.diametroMm = dStr;
+      }
+      if (row.espessuraMm !== undefined && row.espessuraMm !== null) {
+        row.espessuraMm = eStr;
+      }
+      if (row.pesoUnitarioG !== undefined && row.pesoUnitarioG !== null) {
+        row.pesoUnitarioG = String(row.pesoUnitarioG).replace(",", ".");
+      }
+      if (row.metaQuebraPct !== undefined && row.metaQuebraPct !== null) {
+        row.metaQuebraPct = String(row.metaQuebraPct).replace(",", ".");
+      }
+
+      updatedRows[i] = row;
       newModified[row.id] = row;
     }
+
+    setGridRows(updatedRows);
     setModifiedRows(newModified);
   };
 
@@ -205,16 +244,28 @@ export default function ProductsQuery() {
     let successCount = 0;
     try {
       for (const row of rowsToSave) {
+        const cleanPeso = row.pesoUnitarioG ? String(row.pesoUnitarioG).replace(",", ".") : null;
+        const finalPeso = cleanPeso && !isNaN(Number(cleanPeso)) ? Number(cleanPeso).toFixed(3) : null;
+
+        const cleanDiam = row.diametroMm ? String(row.diametroMm).replace(",", ".") : null;
+        const finalDiam = cleanDiam && !isNaN(Number(cleanDiam)) ? Number(cleanDiam).toFixed(3) : null;
+
+        const cleanEsp = row.espessuraMm ? String(row.espessuraMm).replace(",", ".") : null;
+        const finalEsp = cleanEsp && !isNaN(Number(cleanEsp)) ? Number(cleanEsp).toFixed(2) : null;
+
+        const cleanMeta = row.metaQuebraPct ? String(row.metaQuebraPct).replace(",", ".") : null;
+        const finalMeta = cleanMeta && !isNaN(Number(cleanMeta)) ? Number(cleanMeta).toFixed(2) : null;
+
         await updateProductMutation2.mutateAsync({
           code: row.code,
           description: row.description?.toUpperCase() || "",
           photoUrl: row.photoUrl || null,
           barcode: row.barcode?.trim() || null,
-          pesoUnitarioG: row.pesoUnitarioG ? String(Number(row.pesoUnitarioG)) : null,
-          diametroMm: row.diametroMm || null,
-          espessuraMm: row.espessuraMm || null,
+          pesoUnitarioG: finalPeso,
+          diametroMm: finalDiam,
+          espessuraMm: finalEsp,
           idealPecasHora: row.idealPecasHora ? Number(row.idealPecasHora) : null,
-          metaQuebraPct: row.metaQuebraPct || null,
+          metaQuebraPct: finalMeta,
         });
         successCount++;
       }

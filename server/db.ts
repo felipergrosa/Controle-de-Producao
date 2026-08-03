@@ -603,6 +603,35 @@ export async function createOrUpdateProduct(
 ): Promise<Product> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
+
+  // Sanitizar decimais
+  const cleanPeso = pesoUnitarioG !== undefined && pesoUnitarioG !== null 
+    ? String(pesoUnitarioG).replace(",", ".") 
+    : pesoUnitarioG;
+  const finalPeso = cleanPeso !== undefined && cleanPeso !== null && !isNaN(Number(cleanPeso))
+    ? Number(cleanPeso).toFixed(3)
+    : cleanPeso;
+
+  const cleanDiam = diametroMm !== undefined && diametroMm !== null 
+    ? String(diametroMm).replace(",", ".") 
+    : diametroMm;
+  const finalDiam = cleanDiam !== undefined && cleanDiam !== null && !isNaN(Number(cleanDiam))
+    ? Number(cleanDiam).toFixed(3)
+    : cleanDiam;
+
+  const cleanEsp = espessuraMm !== undefined && espessuraMm !== null 
+    ? String(espessuraMm).replace(",", ".") 
+    : espessuraMm;
+  const finalEsp = cleanEsp !== undefined && cleanEsp !== null && !isNaN(Number(cleanEsp))
+    ? Number(cleanEsp).toFixed(2)
+    : cleanEsp;
+
+  const cleanMeta = metaQuebraPct !== undefined && metaQuebraPct !== null 
+    ? String(metaQuebraPct).replace(",", ".") 
+    : metaQuebraPct;
+  const finalMeta = cleanMeta !== undefined && cleanMeta !== null && !isNaN(Number(cleanMeta))
+    ? Number(cleanMeta).toFixed(2)
+    : cleanMeta;
   
   const existing = await getProductByCode(code);
   if (existing) {
@@ -612,11 +641,11 @@ export async function createOrUpdateProduct(
         description, 
         photoUrl, 
         barcode, 
-        pesoUnitarioG: pesoUnitarioG !== undefined ? pesoUnitarioG : existing.pesoUnitarioG,
-        diametroMm: diametroMm !== undefined ? diametroMm : existing.diametroMm,
-        espessuraMm: espessuraMm !== undefined ? espessuraMm : existing.espessuraMm,
+        pesoUnitarioG: finalPeso !== undefined ? finalPeso : existing.pesoUnitarioG,
+        diametroMm: finalDiam !== undefined ? finalDiam : existing.diametroMm,
+        espessuraMm: finalEsp !== undefined ? finalEsp : existing.espessuraMm,
         idealPecasHora: idealPecasHora !== undefined ? idealPecasHora : existing.idealPecasHora,
-        metaQuebraPct: metaQuebraPct !== undefined ? metaQuebraPct : existing.metaQuebraPct,
+        metaQuebraPct: finalMeta !== undefined ? finalMeta : existing.metaQuebraPct,
         updatedAt: now 
       })
       .where(eq(products.code, code));
@@ -625,11 +654,11 @@ export async function createOrUpdateProduct(
       description, 
       photoUrl: photoUrl ?? existing.photoUrl, 
       barcode: barcode ?? existing.barcode, 
-      pesoUnitarioG: pesoUnitarioG !== undefined ? pesoUnitarioG : existing.pesoUnitarioG,
-      diametroMm: diametroMm !== undefined ? diametroMm : existing.diametroMm,
-      espessuraMm: espessuraMm !== undefined ? espessuraMm : existing.espessuraMm,
+      pesoUnitarioG: finalPeso !== undefined ? finalPeso : existing.pesoUnitarioG,
+      diametroMm: finalDiam !== undefined ? finalDiam : existing.diametroMm,
+      espessuraMm: finalEsp !== undefined ? finalEsp : existing.espessuraMm,
       idealPecasHora: idealPecasHora !== undefined ? idealPecasHora : existing.idealPecasHora,
-      metaQuebraPct: metaQuebraPct !== undefined ? metaQuebraPct : existing.metaQuebraPct,
+      metaQuebraPct: finalMeta !== undefined ? finalMeta : existing.metaQuebraPct,
       updatedAt: now 
     };
   }
@@ -644,11 +673,11 @@ export async function createOrUpdateProduct(
     barcode: barcode ?? null,
     totalProduced: 0,
     lastProducedAt: undefined,
-    pesoUnitarioG: pesoUnitarioG ?? null,
-    diametroMm: diametroMm ?? null,
-    espessuraMm: espessuraMm ?? null,
+    pesoUnitarioG: finalPeso ?? null,
+    diametroMm: finalDiam ?? null,
+    espessuraMm: finalEsp ?? null,
     idealPecasHora: idealPecasHora ?? null,
-    metaQuebraPct: metaQuebraPct ?? null,
+    metaQuebraPct: finalMeta ?? null,
     createdAt: now,
     updatedAt: now,
   });
@@ -660,11 +689,11 @@ export async function createOrUpdateProduct(
     barcode: barcode ?? null, 
     totalProduced: 0, 
     lastProducedAt: null, 
-    pesoUnitarioG: pesoUnitarioG ?? null,
-    diametroMm: diametroMm ?? null,
-    espessuraMm: espessuraMm ?? null,
+    pesoUnitarioG: finalPeso ?? null,
+    diametroMm: finalDiam ?? null,
+    espessuraMm: finalEsp ?? null,
     idealPecasHora: idealPecasHora ?? null,
-    metaQuebraPct: metaQuebraPct ?? null,
+    metaQuebraPct: finalMeta ?? null,
     createdAt: now, 
     updatedAt: now 
   };
@@ -837,10 +866,29 @@ export async function updateProductByCode(
 ): Promise<Product | undefined> {
   const db = await getDb();
   if (!db) return undefined;
+
+  const finalUpdates = { ...updates };
+
+  if (updates.pesoUnitarioG !== undefined && updates.pesoUnitarioG !== null) {
+    const clean = String(updates.pesoUnitarioG).replace(",", ".");
+    finalUpdates.pesoUnitarioG = !isNaN(Number(clean)) ? Number(clean).toFixed(3) : clean;
+  }
+  if (updates.diametroMm !== undefined && updates.diametroMm !== null) {
+    const clean = String(updates.diametroMm).replace(",", ".");
+    finalUpdates.diametroMm = !isNaN(Number(clean)) ? Number(clean).toFixed(3) : clean;
+  }
+  if (updates.espessuraMm !== undefined && updates.espessuraMm !== null) {
+    const clean = String(updates.espessuraMm).replace(",", ".");
+    finalUpdates.espessuraMm = !isNaN(Number(clean)) ? Number(clean).toFixed(2) : clean;
+  }
+  if (updates.metaQuebraPct !== undefined && updates.metaQuebraPct !== null) {
+    const clean = String(updates.metaQuebraPct).replace(",", ".");
+    finalUpdates.metaQuebraPct = !isNaN(Number(clean)) ? Number(clean).toFixed(2) : clean;
+  }
   
   const now = new Date();
   await db.update(products)
-    .set({ ...updates, updatedAt: now })
+    .set({ ...finalUpdates, updatedAt: now })
     .where(eq(products.code, code));
   
   const result = await db.select().from(products).where(eq(products.code, code)).limit(1);

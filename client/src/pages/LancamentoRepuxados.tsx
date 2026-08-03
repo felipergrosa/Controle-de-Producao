@@ -962,23 +962,27 @@ export default function LancamentoRepuxados() {
       toast.error("Selecione um Operador/Repuxador");
       return;
     }
-    const totalP = parseInt(pecasProduzidas);
-    if (isNaN(totalP) || totalP <= 0) {
-      toast.error("Quantidade de peças produzidas deve ser maior que 0");
-      return;
-    }
-    const quebradas = parseInt(pecasQuebradas);
-    if (isNaN(quebradas) || quebradas < 0) {
+    const totalP = parseInt(pecasProduzidas) || 0;
+    const quebradas = parseInt(pecasQuebradas) || 0;
+
+    if (quebradas < 0) {
       toast.error("Quantidade de quebras não pode ser negativa");
       return;
     }
-    if (quebradas > totalP) {
-      toast.error("As quebras não podem ser maiores que a produção total");
-      return;
-    }
-    if (quebradas > 0 && !causaQuebraId) {
-      toast.error("Se houver peças quebradas, você deve especificar uma causa");
-      return;
+    if (quebradas === 0) {
+      if (totalP <= 0) {
+        toast.error("Quantidade de peças produzidas deve ser maior que 0");
+        return;
+      }
+    } else {
+      if (!causaQuebraId) {
+        toast.error("Se houver peças quebradas, você deve especificar uma causa");
+        return;
+      }
+      if (totalP > 0 && quebradas > totalP) {
+        toast.error("As quebras não podem ser maiores que a produção total");
+        return;
+      }
     }
 
     const basePayload = {
@@ -1863,7 +1867,8 @@ export default function LancamentoRepuxados() {
                           const peso = Number(l.pesoUnitarioG || 0);
                           const kgProd = (l.pecasProduzidas * peso) / 1000;
                           const kgQueb = (l.pecasQuebradas * peso) / 1000;
-                          const pctQ = l.pecasProduzidas > 0 ? (l.pecasQuebradas / l.pecasProduzidas) * 100 : 0;
+                          const divisor = Math.max(l.pecasProduzidas, l.pecasQuebradas);
+                          const pctQ = divisor > 0 ? (l.pecasQuebradas / divisor) * 100 : 0;
                           const minInicio = timeToMinutes(l.horaInicio);
                           const minFim = timeToMinutes(l.horaFim);
                           let duracaoMin = minFim - minInicio;
@@ -1924,6 +1929,7 @@ export default function LancamentoRepuxados() {
                                 <div className={pctQ > Number(l.metaQuebraPct || 0) ? "font-bold text-red-500" : "font-semibold"}>
                                   {pctQ.toFixed(1)}%
                                 </div>
+                                <div className="text-[10px] text-muted-foreground">{l.pecasQuebradas} pçs ({kgQueb.toFixed(1)} kg)</div>
                                 {l.causaDescricao && (
                                   <div className="text-[10px] text-red-400 font-semibold">{l.causaDescricao}</div>
                                 )}
@@ -1978,7 +1984,9 @@ export default function LancamentoRepuxados() {
                     {sortedLancamentos.map((l) => {
                       const peso = Number(l.pesoUnitarioG || 0);
                       const kgProd = (l.pecasProduzidas * peso) / 1000;
-                      const pctQ = l.pecasProduzidas > 0 ? (l.pecasQuebradas / l.pecasProduzidas) * 100 : 0;
+                      const kgQueb = (l.pecasQuebradas * peso) / 1000;
+                      const divisor = Math.max(l.pecasProduzidas, l.pecasQuebradas);
+                      const pctQ = divisor > 0 ? (l.pecasQuebradas / divisor) * 100 : 0;
                       const minInicio = timeToMinutes(l.horaInicio);
                       const minFim = timeToMinutes(l.horaFim);
                       let duracaoMin = minFim - minInicio;
@@ -2030,6 +2038,7 @@ export default function LancamentoRepuxados() {
                             <div className="flex flex-col">
                               <span className="text-[9px] text-slate-400 font-bold uppercase">Quebras</span>
                               <span className={cn("text-xs font-bold", pctQ > Number(l.metaQuebraPct || 0) ? "text-red-500" : "text-slate-800")}>{pctQ.toFixed(1)}%</span>
+                              <span className="text-[10px] text-muted-foreground">{l.pecasQuebradas} pçs ({kgQueb.toFixed(1)} kg)</span>
                               {l.causaDescricao && <span className="text-[9px] text-red-400 font-semibold truncate" title={l.causaDescricao}>{l.causaDescricao}</span>}
                             </div>
                             <div className="flex flex-col">

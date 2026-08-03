@@ -292,7 +292,7 @@ export function calcularMetricasOperadores(
     const pesoG = Number(row.pesoUnitarioG || 0);
     const kgProd = (row.pecasProduzidas * pesoG) / 1000;
 
-    r.totalPecas += row.pecasProduzidas;
+    r.totalPecas += Math.max(row.pecasProduzidas, row.pecasQuebradas);
     r.totalPecasQuebradas += row.pecasQuebradas;
     r.totalKg += kgProd;
 
@@ -318,7 +318,7 @@ export function calcularMetricasOperadores(
     if (duracao > 0 && row.pecasProduzidas > 0) {
       const disp = Math.max(0, Math.min(1, tempoOperando / duracao));
       const qual = Math.max(0, Math.min(1,
-        (row.pecasProduzidas - row.pecasQuebradas) / row.pecasProduzidas
+        Math.max(0, row.pecasProduzidas - row.pecasQuebradas) / row.pecasProduzidas
       ));
       const idealPH = Number(row.idealPecasHora || 0);
       let perf = 1;
