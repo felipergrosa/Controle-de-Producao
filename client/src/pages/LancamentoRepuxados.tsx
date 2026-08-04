@@ -1522,10 +1522,13 @@ export default function LancamentoRepuxados() {
                       <HelpTooltip content="Quantidade total de peças físicas processadas/repuxadas no lote (incluindo as quebras e perdas)." />
                     </Label>
                     <Input 
-                      type="number" 
+                      type="text"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
                       placeholder="ex: 350" 
                       value={pecasProduzidas} 
-                      onChange={(e) => setPecasProduzidas(e.target.value)} 
+                      onChange={(e) => setPecasProduzidas(e.target.value.replace(/[^0-9]/g, ""))}
+                      className="h-11 text-base"
                     />
                   </div>
                   <div className="space-y-2">
@@ -1534,10 +1537,13 @@ export default function LancamentoRepuxados() {
                       <HelpTooltip content="Quantidade de peças que apresentaram defeitos, racharam ou quebraram durante o processo de repuxo." />
                     </Label>
                     <Input 
-                      type="number" 
+                      type="text"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
                       placeholder="0" 
                       value={pecasQuebradas} 
-                      onChange={(e) => setPecasQuebradas(e.target.value)} 
+                      onChange={(e) => setPecasQuebradas(e.target.value.replace(/[^0-9]/g, "") || "0")}
+                      className="h-11 text-base"
                     />
                   </div>
                 </div>
@@ -1605,11 +1611,13 @@ export default function LancamentoRepuxados() {
                     <div className="w-20 shrink-0">
                       <Label className="text-[10px] text-muted-foreground text-center block">Minutos</Label>
                       <Input 
-                        type="number" 
+                        type="text"
+                        inputMode="numeric"
+                        pattern="[0-9]*"
                         placeholder="min" 
                         value={tempParadaMin}
-                        onChange={(e) => setTempParadaMin(e.target.value)}
-                        className="h-8 text-xs px-1 text-center font-semibold"
+                        onChange={(e) => setTempParadaMin(e.target.value.replace(/[^0-9]/g, ""))}
+                        className="h-10 text-xs px-1 text-center font-semibold"
                       />
                     </div>
                     

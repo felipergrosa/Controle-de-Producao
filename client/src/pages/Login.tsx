@@ -1,12 +1,11 @@
 import { useState } from "react";
 import { useLocation } from "wouter";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
-import { Eye, EyeOff } from "lucide-react";
+import { Eye, EyeOff, LogIn, Loader2 } from "lucide-react";
+import { APP_TITLE } from "@/const";
 
 export default function Login() {
   const [, setLocation] = useLocation();
@@ -19,7 +18,7 @@ export default function Login() {
     onSuccess: () => {
       toast.success("Login realizado com sucesso!");
       setLocation("/dashboard");
-      window.location.reload(); // Recarregar para atualizar contexto
+      window.location.reload();
     },
     onError: (error) => {
       toast.error(error.message || "Erro ao fazer login");
@@ -28,12 +27,10 @@ export default function Login() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
     if (!email || !password) {
       toast.error("Preencha todos os campos");
       return;
     }
-
     setIsLoading(true);
     try {
       await loginMutation.mutateAsync({ email, password });
@@ -43,31 +40,50 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-gray-100">
-      <Card className="w-full max-w-md mx-4">
-        <CardHeader className="space-y-1 text-center">
-          <div className="flex justify-center mb-4">
-            <img src="/logo-nobre.png" alt="Logo NOBRE" className="h-16" />
+    <div className="min-h-screen flex items-center justify-center relative overflow-hidden bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900">
+      {/* Círculos decorativos de fundo */}
+      <div className="absolute top-[-10%] left-[-5%] w-72 h-72 bg-indigo-600/20 rounded-full blur-3xl pointer-events-none" />
+      <div className="absolute bottom-[-10%] right-[-5%] w-96 h-96 bg-violet-600/20 rounded-full blur-3xl pointer-events-none" />
+      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-indigo-500/5 rounded-full blur-3xl pointer-events-none" />
+
+      <div className="relative z-10 w-full max-w-sm mx-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
+        {/* Card com efeito glassmorphism */}
+        <div className="bg-white/10 backdrop-blur-xl border border-white/15 rounded-2xl shadow-2xl p-8 space-y-7">
+          {/* Logo e título */}
+          <div className="flex flex-col items-center gap-4">
+            <div className="p-3 bg-white/10 rounded-2xl border border-white/20">
+              <img src="/logo-nobre.png" alt={APP_TITLE} className="h-14 w-auto object-contain" />
+            </div>
+            <div className="text-center">
+              <h1 className="text-2xl font-bold text-white tracking-tight">Controle de Produção</h1>
+              <p className="text-sm text-white/50 mt-1">Entre com suas credenciais para continuar</p>
+            </div>
           </div>
-          <CardTitle className="text-2xl font-bold">Controle de Produção</CardTitle>
-          <CardDescription>Entre com suas credenciais para continuar</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-4">
+
+          {/* Formulário */}
+          <form onSubmit={handleSubmit} className="space-y-5">
             <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
+              <Label htmlFor="email" className="text-sm font-medium text-white/70">
+                E-mail
+              </Label>
               <Input
                 id="email"
                 type="email"
+                inputMode="email"
                 placeholder="seu@email.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 disabled={isLoading}
                 required
+                className="h-12 bg-white/10 border-white/20 text-white placeholder:text-white/30 focus:border-indigo-400 focus:ring-indigo-400/30 rounded-xl"
+                autoComplete="email"
               />
             </div>
+
             <div className="space-y-2">
-              <Label htmlFor="password">Senha</Label>
+              <Label htmlFor="password" className="text-sm font-medium text-white/70">
+                Senha
+              </Label>
               <div className="relative">
                 <Input
                   id="password"
@@ -76,29 +92,46 @@ export default function Login() {
                   onChange={(e) => setPassword(e.target.value)}
                   disabled={isLoading}
                   required
-                  className="pr-10"
+                  className="h-12 bg-white/10 border-white/20 text-white placeholder:text-white/30 focus:border-indigo-400 focus:ring-indigo-400/30 rounded-xl pr-12"
                   autoComplete="current-password"
+                  placeholder="••••••••"
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword((prev) => !prev)}
-                  className="absolute inset-y-0 right-0 flex items-center pr-3 text-muted-foreground hover:text-foreground"
+                  className="absolute inset-y-0 right-0 flex items-center pr-4 text-white/40 hover:text-white/70 transition-colors min-w-[44px]"
                   aria-label={showPassword ? "Ocultar senha" : "Mostrar senha"}
                 >
-                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
                 </button>
               </div>
             </div>
-            <Button
+
+            <button
               type="submit"
-              className="w-full"
               disabled={isLoading}
+              className="w-full h-12 flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 disabled:cursor-not-allowed text-white font-semibold rounded-xl transition-all duration-200 active:scale-[0.98] shadow-lg shadow-indigo-900/40 mt-2"
             >
-              {isLoading ? "Entrando..." : "Entrar"}
-            </Button>
+              {isLoading ? (
+                <>
+                  <Loader2 className="h-5 w-5 animate-spin" />
+                  <span>Entrando...</span>
+                </>
+              ) : (
+                <>
+                  <LogIn className="h-5 w-5" />
+                  <span>Entrar</span>
+                </>
+              )}
+            </button>
           </form>
-        </CardContent>
-      </Card>
+        </div>
+
+        {/* Rodapé */}
+        <p className="text-center text-white/25 text-xs mt-6">
+          © {new Date().getFullYear()} {APP_TITLE}
+        </p>
+      </div>
     </div>
   );
 }

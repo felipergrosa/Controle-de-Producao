@@ -8,11 +8,13 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { APP_TITLE } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
-import { LayoutDashboard, LogOut, Users, BarChart3, ClipboardList, Upload, FileText, Scale, Activity, Settings, Database, ChevronDown, Zap } from "lucide-react";
+import { LayoutDashboard, LogOut, Users, BarChart3, ClipboardList, Upload, FileText, Scale, Activity, Settings, Database, ChevronDown, Zap, Menu } from "lucide-react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
 import { Button } from "./ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./ui/tooltip";
+import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerTrigger } from "./ui/drawer";
+import { useState } from "react";
 
 type MenuItem = {
   icon: any;
@@ -74,6 +76,14 @@ const menuItems: MenuItem[] = [
   }
 ];
 
+// Tabs fixas para bottom nav (as mais usadas no dia a dia)
+const bottomNavTabs = [
+  { icon: Scale, label: "Repuxo", path: "/repuxo/lancamento" },
+  { icon: LayoutDashboard, label: "Dashboard", path: "/repuxo/dashboard" },
+  { icon: Database, label: "Produtos", path: "/products" },
+  { icon: ClipboardList, label: "Apontar", path: "/production" },
+];
+
 export default function DashboardLayout({
   children,
 }: {
@@ -107,13 +117,14 @@ function DashboardLayoutContent({
   const displayUser = user || { name: "Usuário", email: "usuario@sistema.com" };
   const [location, setLocation] = useLocation();
   const isMobile = useIsMobile();
+  const [menuOpen, setMenuOpen] = useState(false);
   const accessibleMenuItems = menuItems.filter(
     item => !item.adminOnly || (user && "role" in user && user.role === "admin")
   );
-  const activeMenuItem = menuItems.find(item => item.children.some(child => child.path === location));
 
   const navigateTo = (path: string) => {
     setLocation(path);
+    setMenuOpen(false);
   };
 
   const renderMenuButtons = (options?: { inactiveVariant?: "ghost" | "outline"; className?: string }) =>
@@ -230,21 +241,77 @@ function DashboardLayoutContent({
   );
 
   const MobileHeader = () => (
-    <header className="md:hidden border-b bg-background/95 px-3 py-3 space-y-3 sticky top-0 z-40">
-      <div className="flex items-center justify-between gap-3">
-        <img src="/logo-nobre.png" alt={APP_TITLE} className="h-12 object-contain" />
+    <header className="md:hidden border-b bg-background/95 px-4 py-3 sticky top-0 z-40 flex items-center justify-between">
+      <img src="/logo-nobre.png" alt={APP_TITLE} className="h-10 object-contain" />
+      <div className="flex items-center gap-2">
         {renderUserDropdown("mobile")}
-      </div>
-      <div className="flex flex-wrap items-center justify-center gap-2">
-        {renderMenuButtons({ inactiveVariant: "outline", className: "h-12 w-12" })}
+        <Drawer open={menuOpen} onOpenChange={setMenuOpen}>
+          <DrawerTrigger asChild>
+            <Button variant="outline" size="icon" className="h-10 w-10">
+              <Menu className="h-5 w-5" />
+            </Button>
+          </DrawerTrigger>
+          <DrawerContent className="max-h-[80vh]">
+            <DrawerHeader className="pb-2">
+              <DrawerTitle className="text-base font-bold text-slate-700">Menu</DrawerTitle>
+            </DrawerHeader>
+            <div className="overflow-y-auto px-4 pb-8 space-y-1">
+              {accessibleMenuItems.map((section, idx) => (
+                <div key={idx} className="mb-3">
+                  <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400 px-2 mb-1">{section.label}</p>
+                  {section.children.map(child => {
+                    const isActive = location === child.path;
+                    return (
+                      <button
+                        key={child.path}
+                        onClick={() => navigateTo(child.path)}
+                        className={`w-full flex items-center gap-3 px-3 py-3.5 rounded-xl text-sm font-medium transition-colors min-h-[52px] ${
+                          isActive
+                            ? "bg-indigo-50 text-indigo-700 font-bold"
+                            : "text-slate-600 hover:bg-slate-50 active:bg-slate-100"
+                        }`}
+                      >
+                        <child.icon className={`h-5 w-5 shrink-0 ${isActive ? "text-indigo-600" : "text-slate-400"}`} />
+                        <span>{child.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              ))}
+            </div>
+          </DrawerContent>
+        </Drawer>
       </div>
     </header>
+  );
+
+  const MobileBottomNav = () => (
+    <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-background border-t flex items-stretch h-16">
+      {bottomNavTabs.map((tab) => {
+        const exactActive = location === tab.path;
+        return (
+          <button
+            key={tab.path}
+            onClick={() => navigateTo(tab.path)}
+            className={`flex-1 flex flex-col items-center justify-center gap-0.5 transition-colors min-h-[44px] ${
+              exactActive ? "text-indigo-600" : "text-slate-400 hover:text-slate-600 active:text-indigo-500"
+            }`}
+          >
+            <tab.icon className={`h-6 w-6 shrink-0 transition-transform ${exactActive ? "scale-110" : ""}`} />
+            <span className={`text-[10px] font-semibold leading-none ${exactActive ? "text-indigo-600" : ""}`}>
+              {tab.label}
+            </span>
+          </button>
+        );
+      })}
+    </nav>
   );
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
       {isMobile ? <MobileHeader /> : <DesktopHeader />}
-      <main className="flex-1 p-4">{children}</main>
+      <main className={`flex-1 p-4 ${isMobile ? "pb-20" : ""}`}>{children}</main>
+      {isMobile && <MobileBottomNav />}
     </div>
   );
 }
