@@ -71,7 +71,237 @@ function adjustTime(currentTime: string, type: "hour" | "minute", amount: number
   return `${hStr}:${mStr}`;
 }
 
-function RetroDigitalClock({
+// ─── iOS-style Scroll Wheel Picker ──────────────────────────────────────────
+
+const ITEM_HEIGHT = 44; // px por item na roleta
+const VISIBLE_COUNT = 5; // quantos itens ficam visíveis (centro = selecionado)
+const HALF = Math.floor(VISIBLE_COUNT / 2); // 2 acima + 2 abaixo do centro
+
+function WheelColumn({
+  items,
+  selectedIndex,
+  onChange,
+  loop = true,
+}: {
+  items: string[];
+  selectedIndex: number;
+  onChange: (newIndex: number) => void;
+  loop?: boolean;
+}) {
+  const count = items.length;
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // Offset contínuo em px (negativo = rola para cima)
+  const [offset, setOffset] = useState(0);
+  const startYRef = useRef<number | null>(null);
+  const startOffsetRef = useRef(0);
+  const velocityRef = useRef(0);
+  const lastYRef = useRef(0);
+  const lastTimeRef = useRef(0);
+  const rafRef = useRef<number | null>(null);
+
+  // Quando o selectedIndex muda por fora (ex: botão de atalho de turno), sincroniza
+  const committedIndexRef = useRef(selectedIndex);
+  useEffect(() => {
+    if (committedIndexRef.current !== selectedIndex) {
+      committedIndexRef.current = selectedIndex;
+      setOffset(0);
+    }
+  }, [selectedIndex]);
+
+  const snapToNearest = useCallback(
+    (currentOffset: number, currentVelocity: number) => {
+      // Quantos itens o offset representa
+      const rawDelta = -currentOffset / ITEM_HEIGHT;
+      const newIndex = loop
+        ? ((selectedIndex + Math.round(rawDelta)) % count + count) % count
+        : Math.max(0, Math.min(count - 1, selectedIndex + Math.round(rawDelta)));
+
+      // Inércia suave
+      const inertiaFrames = Math.abs(currentVelocity) > 0.5 ? 8 : 0;
+      let frame = 0;
+      const inertia = () => {
+        if (frame < inertiaFrames) {
+          frame++;
+          rafRef.current = requestAnimationFrame(inertia);
+        } else {
+          // Snap final: desliza offset para 0
+          setOffset((prev) => {
+            const target = 0;
+            const diff = target - prev;
+            if (Math.abs(diff) < 1) {
+              onChange(newIndex);
+              committedIndexRef.current = newIndex;
+              return 0;
+            }
+            return prev + diff * 0.35;
+          });
+          rafRef.current = requestAnimationFrame(inertia);
+        }
+      };
+      rafRef.current = requestAnimationFrame(inertia);
+
+      // Emite a mudança imediatamente ao soltar para atualizar o valor
+      onChange(newIndex);
+      committedIndexRef.current = newIndex;
+      setOffset(0);
+    },
+    [selectedIndex, count, loop, onChange]
+  );
+
+  const getY = (e: React.TouchEvent | React.MouseEvent | TouchEvent | MouseEvent): number => {
+    if ("touches" in e) {
+      return (e as React.TouchEvent).touches[0]?.clientY ?? (e as TouchEvent).changedTouches[0]?.clientY ?? 0;
+    }
+    return (e as React.MouseEvent).clientY;
+  };
+
+  const handleDragStart = useCallback((y: number) => {
+    if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    startYRef.current = y;
+    startOffsetRef.current = 0;
+    velocityRef.current = 0;
+    lastYRef.current = y;
+    lastTimeRef.current = Date.now();
+  }, []);
+
+  const handleDragMove = useCallback((y: number) => {
+    if (startYRef.current === null) return;
+    const delta = y - startYRef.current;
+    const now = Date.now();
+    const dt = now - lastTimeRef.current || 1;
+    velocityRef.current = (y - lastYRef.current) / dt;
+    lastYRef.current = y;
+    lastTimeRef.current = now;
+    setOffset(delta);
+  }, []);
+
+  const handleDragEnd = useCallback(
+    (y: number) => {
+      if (startYRef.current === null) return;
+      const delta = y - startYRef.current;
+      startYRef.current = null;
+      snapToNearest(-delta, velocityRef.current);
+    },
+    [snapToNearest]
+  );
+
+  // Touch handlers
+  const onTouchStart = (e: React.TouchEvent) => handleDragStart(e.touches[0].clientY);
+  const onTouchMove = (e: React.TouchEvent) => { e.preventDefault(); handleDragMove(e.touches[0].clientY); };
+  const onTouchEnd = (e: React.TouchEvent) => handleDragEnd(e.changedTouches[0].clientY);
+
+  // Mouse handlers
+  const onMouseDown = (e: React.MouseEvent) => { e.preventDefault(); handleDragStart(e.clientY); };
+  const onMouseMove = useCallback((e: MouseEvent) => handleDragMove(e.clientY), [handleDragMove]);
+  const onMouseUp = useCallback((e: MouseEvent) => handleDragEnd(e.clientY), [handleDragEnd]);
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const up = (e: MouseEvent) => onMouseUp(e);
+    const move = (e: MouseEvent) => onMouseMove(e);
+    window.addEventListener("mousemove", move);
+    window.addEventListener("mouseup", up);
+    return () => {
+      window.removeEventListener("mousemove", move);
+      window.removeEventListener("mouseup", up);
+    };
+  }, [onMouseMove, onMouseUp]);
+
+  // Renderiza VISIBLE_COUNT itens centrados no selectedIndex
+  const renderItems = () => {
+    const result = [];
+    for (let i = -HALF; i <= HALF; i++) {
+      let idx = selectedIndex + i;
+      if (loop) {
+        idx = ((idx % count) + count) % count;
+      } else {
+        if (idx < 0 || idx >= count) {
+          result.push(<div key={`empty-${i}`} style={{ height: ITEM_HEIGHT }} />);
+          continue;
+        }
+      }
+      const distFromCenter = Math.abs(i);
+      // Perspectiva 3D: itens fora do centro ficam menores, mais opacos e rotacionados
+      const rotateX = i * 22; // graus de rotação na perspectiva
+      const scale = 1 - distFromCenter * 0.1;
+      const opacity = 1 - distFromCenter * 0.25;
+
+      result.push(
+        <div
+          key={`${idx}-${i}`}
+          style={{
+            height: ITEM_HEIGHT,
+            transform: `rotateX(${rotateX}deg) scale(${scale})`,
+            opacity,
+            transformOrigin: "center center",
+            transition: startYRef.current !== null ? "none" : "transform 0.18s ease, opacity 0.18s ease",
+          }}
+          className={`flex items-center justify-center font-mono font-bold select-none ${
+            distFromCenter === 0 ? "text-slate-900 text-[32px]" : "text-slate-400 text-xl"
+          }`}
+        >
+          {items[idx]}
+        </div>
+      );
+    }
+    return result;
+  };
+
+  const visibleHeight = VISIBLE_COUNT * ITEM_HEIGHT;
+  const translateY = offset;
+
+  return (
+    <div
+      ref={containerRef}
+      className="relative cursor-grab active:cursor-grabbing overflow-hidden select-none"
+      style={{ height: visibleHeight, width: 72 }}
+      onTouchStart={onTouchStart}
+      onTouchMove={onTouchMove}
+      onTouchEnd={onTouchEnd}
+      onMouseDown={onMouseDown}
+    >
+      {/* Overlay gradiente topo e base (fade-out iOS) */}
+      <div
+        className="absolute inset-x-0 top-0 z-10 pointer-events-none"
+        style={{
+          height: ITEM_HEIGHT * HALF,
+          background: "linear-gradient(to bottom, rgba(255,255,255,0.95), rgba(255,255,255,0))",
+        }}
+      />
+      <div
+        className="absolute inset-x-0 bottom-0 z-10 pointer-events-none"
+        style={{
+          height: ITEM_HEIGHT * HALF,
+          background: "linear-gradient(to top, rgba(255,255,255,0.95), rgba(255,255,255,0))",
+        }}
+      />
+      {/* Linha de seleção central */}
+      <div
+        className="absolute inset-x-0 z-10 pointer-events-none border-t border-b border-slate-200"
+        style={{ top: ITEM_HEIGHT * HALF, height: ITEM_HEIGHT }}
+      />
+
+      {/* Itens com perspectiva 3D */}
+      <div
+        style={{
+          perspective: "600px",
+          perspectiveOrigin: "center center",
+          transform: `translateY(${translateY}px)`,
+          transition: startYRef.current !== null ? "none" : "transform 0.15s cubic-bezier(0.25, 0.46, 0.45, 0.94)",
+        }}
+      >
+        {renderItems()}
+      </div>
+    </div>
+  );
+}
+
+const HOURS = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, "0"));
+const MINUTES = Array.from({ length: 12 }, (_, i) => String(i * 5).padStart(2, "0"));
+
+function IosTimePicker({
   value,
   onChange,
   label,
@@ -81,143 +311,48 @@ function RetroDigitalClock({
   label: string;
 }) {
   const [h, m] = value.split(":").map(Number);
-  const [touchStartY, setTouchStartY] = useState<number | null>(null);
+  const hourIndex = h;
+  // Minutos de 5 em 5 (0,5,10,15,...55) → índice
+  const minuteIndex = Math.round(m / 5) % 12;
 
-  const incrementHour = (amount: number) => {
-    onChange(adjustTime(value, "hour", amount));
-  };
+  const handleHourChange = useCallback(
+    (newIndex: number) => {
+      const newH = String(newIndex).padStart(2, "0");
+      const newM = String(MINUTES[minuteIndex]);
+      onChange(`${newH}:${newM}`);
+    },
+    [minuteIndex, onChange]
+  );
 
-  const incrementMinute = (amount: number) => {
-    onChange(adjustTime(value, "minute", amount));
-  };
-
-  // Funções de arrasto (Touch / Mobile)
-  const handleTouchStart = (e: React.TouchEvent) => {
-    setTouchStartY(e.touches[0].clientY);
-  };
-
-  const handleTouchMove = (e: React.TouchEvent, type: "hour" | "minute") => {
-    if (touchStartY === null) return;
-    const currentY = e.touches[0].clientY;
-    const diffY = touchStartY - currentY;
-
-    if (Math.abs(diffY) > 20) { // Sensibilidade de 20px
-      const amount = diffY > 0 ? 1 : -1; // Cima -> incrementa (+1), Baixo -> decrementa (-1)
-      if (type === "hour") {
-        incrementHour(amount);
-      } else {
-        incrementMinute(amount * 5); // minutos de 5 em 5 para o drag
-      }
-      setTouchStartY(currentY); // Atualiza ponto de partida para rolagem contínua
-    }
-  };
-
-  const handleTouchEnd = () => {
-    setTouchStartY(null);
-  };
-
-  // Funções de arrasto no desktop (Mouse Drag)
-  const [mouseStartY, setMouseStartY] = useState<number | null>(null);
-
-  const handleMouseDown = (e: React.MouseEvent) => {
-    setMouseStartY(e.clientY);
-  };
-
-  const handleMouseMove = (e: React.MouseEvent, type: "hour" | "minute") => {
-    if (mouseStartY === null) return;
-    const currentY = e.clientY;
-    const diffY = mouseStartY - currentY;
-
-    if (Math.abs(diffY) > 20) {
-      const amount = diffY > 0 ? 1 : -1;
-      if (type === "hour") {
-        incrementHour(amount);
-      } else {
-        incrementMinute(amount * 5);
-      }
-      setMouseStartY(currentY);
-    }
-  };
-
-  const handleMouseUpOrLeave = () => {
-    setMouseStartY(null);
-  };
+  const handleMinuteChange = useCallback(
+    (newIndex: number) => {
+      const newH = String(hourIndex).padStart(2, "0");
+      const newM = MINUTES[newIndex];
+      onChange(`${newH}:${newM}`);
+    },
+    [hourIndex, onChange]
+  );
 
   return (
-    <div className="flex flex-col items-center p-3 bg-slate-100/80 rounded-xl border border-slate-200/80 shadow-xs w-[165px] select-none text-slate-800">
-      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-0">{label}</span>
-      
-      <div className="flex items-center gap-2">
-        {/* Bloco de Horas */}
-        <div className="flex flex-col items-center">
-          <button
-            type="button"
-            onClick={() => incrementHour(1)}
-            className="text-slate-400 hover:text-indigo-600 p-1 transition-colors"
-          >
-            <ChevronUp size={16} />
-          </button>
-          
-          <div
-            onTouchStart={handleTouchStart}
-            onTouchMove={(e) => handleTouchMove(e, "hour")}
-            onTouchEnd={handleTouchEnd}
-            onMouseDown={handleMouseDown}
-            onMouseMove={(e) => handleMouseMove(e, "hour")}
-            onMouseUp={handleMouseUpOrLeave}
-            onMouseLeave={handleMouseUpOrLeave}
-            className="w-14 h-14 bg-white border border-slate-200 rounded-lg flex items-center justify-center text-slate-800 font-mono text-3xl font-extrabold tracking-wider shadow-inner cursor-ns-resize"
-            title="Arraste para cima/baixo para ajustar a hora"
-          >
-            {String(h).padStart(2, "0")}
-          </div>
-
-          <button
-            type="button"
-            onClick={() => incrementHour(-1)}
-            className="text-slate-400 hover:text-indigo-600 p-1 transition-colors"
-          >
-            <ChevronDown size={16} />
-          </button>
-        </div>
-
-        {/* Separador Piscante */}
-        <div className="text-slate-400 font-mono text-2xl font-bold pb-2 animate-pulse">:</div>
-
-        {/* Bloco de Minutos */}
-        <div className="flex flex-col items-center">
-          <button
-            type="button"
-            onClick={() => incrementMinute(5)}
-            className="text-slate-400 hover:text-indigo-600 p-1 transition-colors"
-          >
-            <ChevronUp size={16} />
-          </button>
-          
-          <div
-            onTouchStart={handleTouchStart}
-            onTouchMove={(e) => handleTouchMove(e, "minute")}
-            onTouchEnd={handleTouchEnd}
-            onMouseDown={handleMouseDown}
-            onMouseMove={(e) => handleMouseMove(e, "minute")}
-            onMouseUp={handleMouseUpOrLeave}
-            onMouseLeave={handleMouseUpOrLeave}
-            className="w-14 h-14 bg-white border border-slate-200 rounded-lg flex items-center justify-center text-slate-800 font-mono text-3xl font-extrabold tracking-wider shadow-inner cursor-ns-resize"
-            title="Arraste para cima/baixo para ajustar os minutos"
-          >
-            {String(m).padStart(2, "0")}
-          </div>
-
-          <button
-            type="button"
-            onClick={() => incrementMinute(-5)}
-            className="text-slate-400 hover:text-indigo-600 p-1 transition-colors"
-          >
-            <ChevronDown size={16} />
-          </button>
-        </div>
+    <div className="flex flex-col items-center select-none">
+      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">{label}</span>
+      <div
+        className="flex items-center gap-1 bg-white rounded-2xl border border-slate-200 shadow-sm px-3 py-2"
+        style={{ perspective: "600px" }}
+      >
+        <WheelColumn
+          items={HOURS}
+          selectedIndex={hourIndex}
+          onChange={handleHourChange}
+        />
+        {/* Separador : fixo no centro */}
+        <div className="font-mono font-bold text-2xl text-slate-500 pb-0 leading-none" style={{ marginBottom: 2 }}>:</div>
+        <WheelColumn
+          items={MINUTES}
+          selectedIndex={minuteIndex}
+          onChange={handleMinuteChange}
+        />
       </div>
-      <span className="text-[8px] text-slate-400 mt-1 uppercase font-semibold">Arraste para rolar</span>
     </div>
   );
 }
@@ -1443,13 +1578,13 @@ export default function LancamentoRepuxados() {
                   {!showManualTime ? (
                     <div className="flex flex-col items-center space-y-4">
                       {/* Dois Relógios lado a lado */}
-                      <div className="flex justify-center gap-4 w-full">
-                        <RetroDigitalClock
+                      <div className="flex justify-center gap-6 w-full">
+                        <IosTimePicker
                           value={horaInicio}
                           onChange={setHoraInicio}
                           label="Início"
                         />
-                        <RetroDigitalClock
+                        <IosTimePicker
                           value={horaFim}
                           onChange={setHoraFim}
                           label="Fim"
