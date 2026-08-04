@@ -73,223 +73,229 @@ function adjustTime(currentTime: string, type: "hour" | "minute", amount: number
 
 // ─── iOS-style Scroll Wheel Picker ──────────────────────────────────────────
 
-const ITEM_HEIGHT = 44; // px por item na roleta
-const VISIBLE_COUNT = 5; // quantos itens ficam visíveis (centro = selecionado)
-const HALF = Math.floor(VISIBLE_COUNT / 2); // 2 acima + 2 abaixo do centro
+const WH_ITEM_H   = 38;  // altura de cada item na roleta (px)
+const WH_VISIBLE  = 5;   // quantidade de itens visíveis (ímpar; centro = selecionado)
+const WH_EXTRA    = 3;   // itens extras renderizados acima/abaixo para suavidade
+const WH_HALF     = Math.floor(WH_VISIBLE / 2);   // = 2
+const WH_TOTAL    = WH_VISIBLE + 2 * WH_EXTRA;    // = 11
+
+const HOURS   = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, "0"));
+const MINUTES = Array.from({ length: 12 }, (_, i) => String(i * 5).padStart(2, "0"));
 
 function WheelColumn({
   items,
   selectedIndex,
   onChange,
   loop = true,
+  width = 54,
 }: {
   items: string[];
   selectedIndex: number;
-  onChange: (newIndex: number) => void;
+  onChange: (i: number) => void;
   loop?: boolean;
+  width?: number;
 }) {
-  const count = items.length;
-  const containerRef = useRef<HTMLDivElement>(null);
+  const n = items.length;
+  const ref = useRef<HTMLDivElement>(null);
 
-  // Offset contínuo em px (negativo = rola para cima)
-  const [offset, setOffset] = useState(0);
-  const startYRef = useRef<number | null>(null);
-  const startOffsetRef = useRef(0);
-  const velocityRef = useRef(0);
-  const lastYRef = useRef(0);
-  const lastTimeRef = useRef(0);
-  const rafRef = useRef<number | null>(null);
+  // dy: deslocamento visual em px durante o arrasto (positivo = arrastou para baixo)
+  const [dy, setDy]           = useState(0);
+  const [dragging, setDragging] = useState(false);
 
-  // Quando o selectedIndex muda por fora (ex: botão de atalho de turno), sincroniza
-  const committedIndexRef = useRef(selectedIndex);
+  const isDragging  = useRef(false);
+  const startY      = useRef(0);
+  const selRef      = useRef(selectedIndex);
+  const onChRef     = useRef(onChange);
+
+  // Mantém refs sempre atualizados para usar em closures de event listeners
+  useEffect(() => { selRef.current  = selectedIndex; }, [selectedIndex]);
+  useEffect(() => { onChRef.current = onChange; },     [onChange]);
+
+  // Reseta offset visual quando a seleção muda externamente (atalhos de turno, etc.)
+  const prevSel = useRef(selectedIndex);
   useEffect(() => {
-    if (committedIndexRef.current !== selectedIndex) {
-      committedIndexRef.current = selectedIndex;
-      setOffset(0);
+    if (prevSel.current !== selectedIndex) {
+      prevSel.current = selectedIndex;
+      setDy(0);
     }
   }, [selectedIndex]);
 
-  const snapToNearest = useCallback(
-    (currentOffset: number, currentVelocity: number) => {
-      // Quantos itens o offset representa
-      const rawDelta = -currentOffset / ITEM_HEIGHT;
-      const newIndex = loop
-        ? ((selectedIndex + Math.round(rawDelta)) % count + count) % count
-        : Math.max(0, Math.min(count - 1, selectedIndex + Math.round(rawDelta)));
+  // Calcula novo índice a partir do deslocamento total em px e notifica pai
+  const commit = useCallback((totalDy: number) => {
+    const steps = -Math.round(totalDy / WH_ITEM_H);
+    const curr  = selRef.current;
+    const ni    = loop
+      ? ((curr + steps) % n + n) % n
+      : Math.max(0, Math.min(n - 1, curr + steps));
+    setDy(0);
+    setDragging(false);
+    if (ni !== curr) onChRef.current(ni);
+  }, [n, loop]);
 
-      // Inércia suave
-      const inertiaFrames = Math.abs(currentVelocity) > 0.5 ? 8 : 0;
-      let frame = 0;
-      const inertia = () => {
-        if (frame < inertiaFrames) {
-          frame++;
-          rafRef.current = requestAnimationFrame(inertia);
-        } else {
-          // Snap final: desliza offset para 0
-          setOffset((prev) => {
-            const target = 0;
-            const diff = target - prev;
-            if (Math.abs(diff) < 1) {
-              onChange(newIndex);
-              committedIndexRef.current = newIndex;
-              return 0;
-            }
-            return prev + diff * 0.35;
-          });
-          rafRef.current = requestAnimationFrame(inertia);
-        }
-      };
-      rafRef.current = requestAnimationFrame(inertia);
+  // ── Touch (listener não-passivo para evitar scroll da página) ──────────────
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
 
-      // Emite a mudança imediatamente ao soltar para atualizar o valor
-      onChange(newIndex);
-      committedIndexRef.current = newIndex;
-      setOffset(0);
-    },
-    [selectedIndex, count, loop, onChange]
-  );
+    const onTS = (e: TouchEvent) => {
+      e.preventDefault();          // ← impede scroll da página
+      isDragging.current = true;
+      setDragging(true);
+      startY.current = e.touches[0].clientY;
+      setDy(0);
+    };
+    const onTM = (e: TouchEvent) => {
+      e.preventDefault();          // ← impede scroll da página
+      if (!isDragging.current) return;
+      setDy(e.touches[0].clientY - startY.current);
+    };
+    const onTE = (e: TouchEvent) => {
+      if (!isDragging.current) return;
+      isDragging.current = false;
+      commit(e.changedTouches[0].clientY - startY.current);
+    };
 
-  const getY = (e: React.TouchEvent | React.MouseEvent | TouchEvent | MouseEvent): number => {
-    if ("touches" in e) {
-      return (e as React.TouchEvent).touches[0]?.clientY ?? (e as TouchEvent).changedTouches[0]?.clientY ?? 0;
-    }
-    return (e as React.MouseEvent).clientY;
-  };
+    el.addEventListener("touchstart", onTS, { passive: false });
+    el.addEventListener("touchmove",  onTM, { passive: false });
+    el.addEventListener("touchend",   onTE, { passive: false });
+    return () => {
+      el.removeEventListener("touchstart", onTS);
+      el.removeEventListener("touchmove",  onTM);
+      el.removeEventListener("touchend",   onTE);
+    };
+  }, [commit]);
 
-  const handleDragStart = useCallback((y: number) => {
-    if (rafRef.current) cancelAnimationFrame(rafRef.current);
-    startYRef.current = y;
-    startOffsetRef.current = 0;
-    velocityRef.current = 0;
-    lastYRef.current = y;
-    lastTimeRef.current = Date.now();
+  // ── Mouse Drag ────────────────────────────────────────────────────────────
+  const onMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    isDragging.current = true;
+    setDragging(true);
+    startY.current = e.clientY;
+    setDy(0);
   }, []);
-
-  const handleDragMove = useCallback((y: number) => {
-    if (startYRef.current === null) return;
-    const delta = y - startYRef.current;
-    const now = Date.now();
-    const dt = now - lastTimeRef.current || 1;
-    velocityRef.current = (y - lastYRef.current) / dt;
-    lastYRef.current = y;
-    lastTimeRef.current = now;
-    setOffset(delta);
-  }, []);
-
-  const handleDragEnd = useCallback(
-    (y: number) => {
-      if (startYRef.current === null) return;
-      const delta = y - startYRef.current;
-      startYRef.current = null;
-      snapToNearest(-delta, velocityRef.current);
-    },
-    [snapToNearest]
-  );
-
-  // Touch handlers
-  const onTouchStart = (e: React.TouchEvent) => handleDragStart(e.touches[0].clientY);
-  const onTouchMove = (e: React.TouchEvent) => { e.preventDefault(); handleDragMove(e.touches[0].clientY); };
-  const onTouchEnd = (e: React.TouchEvent) => handleDragEnd(e.changedTouches[0].clientY);
-
-  // Mouse handlers
-  const onMouseDown = (e: React.MouseEvent) => { e.preventDefault(); handleDragStart(e.clientY); };
-  const onMouseMove = useCallback((e: MouseEvent) => handleDragMove(e.clientY), [handleDragMove]);
-  const onMouseUp = useCallback((e: MouseEvent) => handleDragEnd(e.clientY), [handleDragEnd]);
 
   useEffect(() => {
-    const el = containerRef.current;
-    if (!el) return;
-    const up = (e: MouseEvent) => onMouseUp(e);
-    const move = (e: MouseEvent) => onMouseMove(e);
-    window.addEventListener("mousemove", move);
-    window.addEventListener("mouseup", up);
-    return () => {
-      window.removeEventListener("mousemove", move);
-      window.removeEventListener("mouseup", up);
+    const onMM = (e: MouseEvent) => {
+      if (!isDragging.current) return;
+      setDy(e.clientY - startY.current);
     };
-  }, [onMouseMove, onMouseUp]);
+    const onMU = (e: MouseEvent) => {
+      if (!isDragging.current) return;
+      isDragging.current = false;
+      commit(e.clientY - startY.current);
+    };
+    window.addEventListener("mousemove", onMM);
+    window.addEventListener("mouseup",   onMU);
+    return () => {
+      window.removeEventListener("mousemove", onMM);
+      window.removeEventListener("mouseup",   onMU);
+    };
+  }, [commit]);
 
-  // Renderiza VISIBLE_COUNT itens centrados no selectedIndex
+  // ── Mouse Wheel (scroll do mouse sobre o picker) ──────────────────────────
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const onW = (e: WheelEvent) => {
+      e.preventDefault();
+      const steps = e.deltaY > 0 ? 1 : -1;
+      const curr = selRef.current;
+      const ni   = loop
+        ? ((curr + steps) % n + n) % n
+        : Math.max(0, Math.min(n - 1, curr + steps));
+      if (ni !== curr) onChRef.current(ni);
+    };
+    el.addEventListener("wheel", onW, { passive: false });
+    return () => el.removeEventListener("wheel", onW);
+  }, [n, loop]);
+
+  // ── Renderização ──────────────────────────────────────────────────────────
+  // translateY posiciona os itens extras fora da viewport e aplica o dy do drag
+  const translateY = -WH_EXTRA * WH_ITEM_H + dy;
+
   const renderItems = () => {
-    const result = [];
-    for (let i = -HALF; i <= HALF; i++) {
-      let idx = selectedIndex + i;
+    const els = [];
+    for (let i = 0; i < WH_TOTAL; i++) {
+      // posição relativa ao centro (0 = selecionado)
+      const relPos = i - WH_EXTRA - WH_HALF;
+      let idx = selectedIndex + relPos;
       if (loop) {
-        idx = ((idx % count) + count) % count;
-      } else {
-        if (idx < 0 || idx >= count) {
-          result.push(<div key={`empty-${i}`} style={{ height: ITEM_HEIGHT }} />);
-          continue;
-        }
+        idx = ((idx % n) + n) % n;
       }
-      const distFromCenter = Math.abs(i);
-      // Perspectiva 3D: itens fora do centro ficam menores, mais opacos e rotacionados
-      const rotateX = i * 22; // graus de rotação na perspectiva
-      const scale = 1 - distFromCenter * 0.1;
-      const opacity = 1 - distFromCenter * 0.25;
+      const outOfBounds = !loop && (idx < 0 || idx >= n);
 
-      result.push(
+      // distância visual do centro considerando o arrasto atual
+      const visualDist = relPos + dy / WH_ITEM_H;
+      const absDist    = Math.abs(visualDist);
+
+      const rotX    = -visualDist * 18;                           // efeito tambor
+      const scale   = Math.max(0.65, 1 - absDist * 0.09);
+      const opacity = outOfBounds ? 0 : Math.max(0.08, 1 - absDist * 0.32);
+      const isCenter = absDist < 0.55;
+
+      els.push(
         <div
-          key={`${idx}-${i}`}
+          key={i}
           style={{
-            height: ITEM_HEIGHT,
-            transform: `rotateX(${rotateX}deg) scale(${scale})`,
+            height: WH_ITEM_H,
+            transform: `perspective(500px) rotateX(${rotX}deg) scale(${scale})`,
             opacity,
             transformOrigin: "center center",
-            transition: startYRef.current !== null ? "none" : "transform 0.18s ease, opacity 0.18s ease",
           }}
-          className={`flex items-center justify-center font-mono font-bold select-none ${
-            distFromCenter === 0 ? "text-slate-900 text-[32px]" : "text-slate-400 text-xl"
+          className={`flex items-center justify-center font-mono font-bold pointer-events-none ${
+            isCenter ? "text-slate-900 text-[26px]" : "text-slate-400 text-[14px]"
           }`}
         >
-          {items[idx]}
+          {outOfBounds ? "" : items[idx]}
         </div>
       );
     }
-    return result;
+    return els;
   };
 
-  const visibleHeight = VISIBLE_COUNT * ITEM_HEIGHT;
-  const translateY = offset;
+  const containerH = WH_VISIBLE * WH_ITEM_H;
 
   return (
     <div
-      ref={containerRef}
-      className="relative cursor-grab active:cursor-grabbing overflow-hidden select-none"
-      style={{ height: visibleHeight, width: 72 }}
-      onTouchStart={onTouchStart}
-      onTouchMove={onTouchMove}
-      onTouchEnd={onTouchEnd}
+      ref={ref}
+      className="relative overflow-hidden select-none cursor-grab active:cursor-grabbing"
+      style={{ height: containerH, width, touchAction: "none" }}
       onMouseDown={onMouseDown}
     >
-      {/* Overlay gradiente topo e base (fade-out iOS) */}
+      {/* Fade superior */}
       <div
         className="absolute inset-x-0 top-0 z-10 pointer-events-none"
         style={{
-          height: ITEM_HEIGHT * HALF,
-          background: "linear-gradient(to bottom, rgba(255,255,255,0.95), rgba(255,255,255,0))",
+          height: WH_ITEM_H * WH_HALF,
+          background: "linear-gradient(to bottom, rgba(255,255,255,0.96), rgba(255,255,255,0))",
         }}
       />
+      {/* Fade inferior */}
       <div
         className="absolute inset-x-0 bottom-0 z-10 pointer-events-none"
         style={{
-          height: ITEM_HEIGHT * HALF,
-          background: "linear-gradient(to top, rgba(255,255,255,0.95), rgba(255,255,255,0))",
+          height: WH_ITEM_H * WH_HALF,
+          background: "linear-gradient(to top, rgba(255,255,255,0.96), rgba(255,255,255,0))",
         }}
       />
       {/* Linha de seleção central */}
       <div
-        className="absolute inset-x-0 z-10 pointer-events-none border-t border-b border-slate-200"
-        style={{ top: ITEM_HEIGHT * HALF, height: ITEM_HEIGHT }}
+        className="absolute inset-x-1 z-10 pointer-events-none rounded"
+        style={{
+          top: WH_ITEM_H * WH_HALF,
+          height: WH_ITEM_H,
+          background: "rgba(99,102,241,0.07)",
+          borderTop: "1.5px solid rgba(99,102,241,0.22)",
+          borderBottom: "1.5px solid rgba(99,102,241,0.22)",
+        }}
       />
 
-      {/* Itens com perspectiva 3D */}
+      {/* Coluna de itens */}
       <div
         style={{
-          perspective: "600px",
-          perspectiveOrigin: "center center",
           transform: `translateY(${translateY}px)`,
-          transition: startYRef.current !== null ? "none" : "transform 0.15s cubic-bezier(0.25, 0.46, 0.45, 0.94)",
+          transition: dragging ? "none" : "transform 0.18s cubic-bezier(0.25,0.46,0.45,0.94)",
+          willChange: "transform",
         }}
       >
         {renderItems()}
@@ -297,9 +303,6 @@ function WheelColumn({
     </div>
   );
 }
-
-const HOURS = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, "0"));
-const MINUTES = Array.from({ length: 12 }, (_, i) => String(i * 5).padStart(2, "0"));
 
 function IosTimePicker({
   value,
@@ -311,47 +314,30 @@ function IosTimePicker({
   label: string;
 }) {
   const [h, m] = value.split(":").map(Number);
-  const hourIndex = h;
-  // Minutos de 5 em 5 (0,5,10,15,...55) → índice
-  const minuteIndex = Math.round(m / 5) % 12;
+  const hourIndex   = h;
+  const minuteIndex = Math.min(11, Math.round(m / 5) % 12);
 
   const handleHourChange = useCallback(
-    (newIndex: number) => {
-      const newH = String(newIndex).padStart(2, "0");
-      const newM = String(MINUTES[minuteIndex]);
-      onChange(`${newH}:${newM}`);
+    (ni: number) => {
+      onChange(`${String(ni).padStart(2, "0")}:${MINUTES[minuteIndex]}`);
     },
     [minuteIndex, onChange]
   );
 
   const handleMinuteChange = useCallback(
-    (newIndex: number) => {
-      const newH = String(hourIndex).padStart(2, "0");
-      const newM = MINUTES[newIndex];
-      onChange(`${newH}:${newM}`);
+    (ni: number) => {
+      onChange(`${String(hourIndex).padStart(2, "0")}:${MINUTES[ni]}`);
     },
     [hourIndex, onChange]
   );
 
   return (
     <div className="flex flex-col items-center select-none">
-      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">{label}</span>
-      <div
-        className="flex items-center gap-1 bg-white rounded-2xl border border-slate-200 shadow-sm px-3 py-2"
-        style={{ perspective: "600px" }}
-      >
-        <WheelColumn
-          items={HOURS}
-          selectedIndex={hourIndex}
-          onChange={handleHourChange}
-        />
-        {/* Separador : fixo no centro */}
-        <div className="font-mono font-bold text-2xl text-slate-500 pb-0 leading-none" style={{ marginBottom: 2 }}>:</div>
-        <WheelColumn
-          items={MINUTES}
-          selectedIndex={minuteIndex}
-          onChange={handleMinuteChange}
-        />
+      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">{label}</span>
+      <div className="flex items-center bg-white rounded-xl border border-slate-200 shadow-sm px-2 py-1 gap-0.5">
+        <WheelColumn items={HOURS}   selectedIndex={hourIndex}   onChange={handleHourChange}   width={52} />
+        <span className="font-mono font-extrabold text-xl text-slate-400 px-0.5 mb-0.5">:</span>
+        <WheelColumn items={MINUTES} selectedIndex={minuteIndex} onChange={handleMinuteChange} width={52} />
       </div>
     </div>
   );
