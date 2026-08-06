@@ -343,6 +343,7 @@ export async function getDashboardStats(
     motivoParadaId?: number | null;
     productId?: string | null;
     sortBy?: string | null;
+    quebraPorDia?: boolean | null;
   }
 ): Promise<any> {
   let data = await getProducaoRepuxados(startDate, endDate);
@@ -590,6 +591,7 @@ export async function getDashboardStats(
     totalKg: number; 
     totalQuebradas: number; 
     quebraPct: number; 
+    data?: string;
   }> = {};
 
   for (const row of data) {
@@ -598,21 +600,27 @@ export async function getDashboardStats(
     const desc = row.productDescription || "Sem descrição";
     const pesoG = Number(row.pesoUnitarioG || 0);
     const kgProd = (row.pecasProduzidas * pesoG) / 1000;
+    const dataStr = typeof row.dataProducao === "string" 
+      ? row.dataProducao.split("T")[0] 
+      : (row.dataProducao instanceof Date ? row.dataProducao.toISOString().split("T")[0] : String(row.dataProducao));
 
-    if (!rankingProdutos[prodId]) {
-      rankingProdutos[prodId] = {
+    const key = filters?.quebraPorDia ? `${prodId}_${dataStr}` : prodId;
+
+    if (!rankingProdutos[key]) {
+      rankingProdutos[key] = {
         id: prodId,
         code,
         description: desc,
         totalPecas: 0,
         totalKg: 0,
         totalQuebradas: 0,
-        quebraPct: 0
+        quebraPct: 0,
+        ...(filters?.quebraPorDia ? { data: dataStr } : {})
       };
     }
-    rankingProdutos[prodId].totalPecas += Math.max(row.pecasProduzidas, row.pecasQuebradas);
-    rankingProdutos[prodId].totalKg += kgProd;
-    rankingProdutos[prodId].totalQuebradas += row.pecasQuebradas;
+    rankingProdutos[key].totalPecas += Math.max(row.pecasProduzidas, row.pecasQuebradas);
+    rankingProdutos[key].totalKg += kgProd;
+    rankingProdutos[key].totalQuebradas += row.pecasQuebradas;
   }
 
   const listProdutos = Object.values(rankingProdutos).map(p => {
@@ -623,9 +631,15 @@ export async function getDashboardStats(
       description: p.description,
       totalKg: Number(p.totalKg.toFixed(2)),
       totalPecas: p.totalPecas,
-      quebraPct: Number(qPct.toFixed(2))
+      quebraPct: Number(qPct.toFixed(2)),
+      ...(p.data ? { data: p.data } : {})
     };
-  }).sort((a, b) => b.totalKg - a.totalKg);
+  }).sort((a, b) => {
+    if (filters?.quebraPorDia && a.data && b.data && a.data !== b.data) {
+      return b.data.localeCompare(a.data);
+    }
+    return b.totalKg - a.totalKg;
+  });
 
   return {
     totalPecasProduzidas,

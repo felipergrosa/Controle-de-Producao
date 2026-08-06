@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { cn } from "@/lib/utils";
@@ -79,6 +80,7 @@ export default function DashboardRepuxo() {
   const [motivoParadaId, setMotivoParadaId] = useState<number | undefined>(undefined);
   const [productId, setProductId] = useState<string | undefined>(undefined);
   const [sortBy, setSortBy] = useState<string | undefined>(undefined);
+  const [quebraPorDia, setQuebraPorDia] = useState<boolean>(false);
 
   // Estados temporários para o modal de filtros
   const [tempStartDateStr, setTempStartDateStr] = useState(startDateStr);
@@ -89,6 +91,7 @@ export default function DashboardRepuxo() {
   const [tempMotivoParadaId, setTempMotivoParadaId] = useState<string>("todos");
   const [tempProductId, setTempProductId] = useState<string>("todos");
   const [tempSortBy, setTempSortBy] = useState<string>("producao_desc");
+  const [tempQuebraPorDia, setTempQuebraPorDia] = useState<boolean>(false);
 
   // Estado para controlar abertura do modal
   const [isFilterModalOpen, setIsFilterModalOpen] = useState(false);
@@ -115,6 +118,7 @@ export default function DashboardRepuxo() {
     motivoParadaId: motivoParadaId ?? null,
     productId: productId ?? null,
     sortBy: sortBy ?? null,
+    quebraPorDia: quebraPorDia,
   }, {
     staleTime: 30000 // Cache 30 segundos
   });
@@ -128,7 +132,7 @@ export default function DashboardRepuxo() {
     oeeGeral: statsQuery.data.oeeGeral || { disponibilidade: 100, performance: 100, qualidade: 100, oee: 100 },
   } : undefined;
 
-  const hasActiveFilters = repuxadorId !== undefined || turno !== undefined || causaQuebraId !== undefined || motivoParadaId !== undefined || productId !== undefined || (sortBy !== undefined && sortBy !== "producao_desc");
+  const hasActiveFilters = repuxadorId !== undefined || turno !== undefined || causaQuebraId !== undefined || motivoParadaId !== undefined || productId !== undefined || (sortBy !== undefined && sortBy !== "producao_desc") || quebraPorDia;
 
   const activePeriod = useMemo(() => {
     const todayStr = format(today, "yyyy-MM-dd");
@@ -167,6 +171,7 @@ export default function DashboardRepuxo() {
     setTempMotivoParadaId(motivoParadaId !== undefined ? String(motivoParadaId) : "todos");
     setTempProductId(productId || "todos");
     setTempSortBy(sortBy || "producao_desc");
+    setTempQuebraPorDia(quebraPorDia);
     setIsFilterModalOpen(true);
   };
 
@@ -179,6 +184,7 @@ export default function DashboardRepuxo() {
     setMotivoParadaId(tempMotivoParadaId === "todos" ? undefined : Number(tempMotivoParadaId));
     setProductId(tempProductId === "todos" ? undefined : tempProductId);
     setSortBy(tempSortBy);
+    setQuebraPorDia(tempQuebraPorDia);
     setIsFilterModalOpen(false);
   };
 
@@ -196,6 +202,7 @@ export default function DashboardRepuxo() {
     setMotivoParadaId(undefined);
     setProductId(undefined);
     setSortBy(undefined);
+    setQuebraPorDia(false);
     
     setTempRepuxadorId("todos");
     setTempTurno("todos");
@@ -203,6 +210,7 @@ export default function DashboardRepuxo() {
     setTempMotivoParadaId("todos");
     setTempProductId("todos");
     setTempSortBy("producao_desc");
+    setTempQuebraPorDia(false);
     
     setIsFilterModalOpen(false);
   };
@@ -581,6 +589,18 @@ export default function DashboardRepuxo() {
                     </SelectContent>
                   </Select>
                 </div>
+
+                {/* Checkbox Quebra por Dia */}
+                <div className="flex items-center space-x-2 pt-3 border-t mt-1">
+                  <Checkbox 
+                    id="quebraPorDia" 
+                    checked={tempQuebraPorDia} 
+                    onCheckedChange={(checked) => setTempQuebraPorDia(!!checked)} 
+                  />
+                  <Label htmlFor="quebraPorDia" className="text-xs font-semibold text-slate-700 cursor-pointer select-none">
+                    Quebrar ranking de produtos por dia (Quebra por dia)
+                  </Label>
+                </div>
               </div>
 
               <DialogFooter className="flex justify-between items-center gap-2 border-t pt-4">
@@ -661,6 +681,12 @@ export default function DashboardRepuxo() {
                 sortBy === "quebra_asc" ? "Menor Quebra (%)" : sortBy
               }
               <button onClick={() => setSortBy(undefined)} className="hover:text-red-500 font-bold ml-1 text-xs">×</button>
+            </Badge>
+          )}
+          {quebraPorDia && (
+            <Badge variant="secondary" className="gap-1 bg-white border border-slate-200 text-slate-700 font-semibold px-2 py-0.5 shadow-sm text-[10px]">
+              Quebra por dia: Ativada
+              <button onClick={() => setQuebraPorDia(false)} className="hover:text-red-500 font-bold ml-1 text-xs">×</button>
             </Badge>
           )}
           <Button variant="ghost" size="sm" onClick={handleClearFilters} className="text-red-500 hover:text-red-700 hover:bg-red-50 font-semibold h-7 px-2.5 text-[11px] ml-auto">
@@ -977,6 +1003,11 @@ export default function DashboardRepuxo() {
                     <TableHeader className="bg-slate-50/50">
                       <TableRow>
                         <TableHead className="w-[80px]">Rank</TableHead>
+                        {quebraPorDia && (
+                          <TableHead className="w-[100px] cursor-pointer hover:bg-slate-100 select-none group" onClick={() => handleSortRankingProdutos('data')}>
+                            <div className="flex items-center gap-1">Data <ArrowUpDown className="h-3 w-3 opacity-0 group-hover:opacity-100 transition-opacity" /></div>
+                          </TableHead>
+                        )}
                         <TableHead className="w-[120px] cursor-pointer hover:bg-slate-100 select-none group" onClick={() => handleSortRankingProdutos('code')}>
                           <div className="flex items-center gap-1">Código <ArrowUpDown className="h-3 w-3 opacity-0 group-hover:opacity-100 transition-opacity" /></div>
                         </TableHead>
@@ -995,28 +1026,44 @@ export default function DashboardRepuxo() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {sortedRankingProdutos.map((p: any, index: number) => (
-                        <TableRow key={p.id}>
-                          <TableCell className="font-semibold">
-                            <span className="text-xs text-muted-foreground font-mono">#{index + 1}</span>
-                          </TableCell>
-                          <TableCell className="font-mono text-xs font-semibold">{p.code}</TableCell>
-                          <TableCell className="max-w-[300px] truncate font-medium text-slate-700" title={p.description}>
-                            {p.description}
-                          </TableCell>
-                          <TableCell className="text-right font-semibold text-indigo-600">
-                            {p.totalKg.toLocaleString('pt-BR')} kg
-                          </TableCell>
-                          <TableCell className="text-right text-slate-600">
-                            {p.totalPecas.toLocaleString('pt-BR')} pçs
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <span className={p.quebraPct > 2.5 ? "text-red-500 font-bold" : "text-emerald-500 font-semibold"}>
-                              {p.quebraPct.toFixed(2)}%
-                            </span>
-                          </TableCell>
-                        </TableRow>
-                      ))}
+                      {sortedRankingProdutos.map((p: any, index: number) => {
+                        let dataFormatada = "";
+                        if (p.data) {
+                          try {
+                            const [y, m, d] = p.data.split("-");
+                            dataFormatada = `${d}/${m}/${y}`;
+                          } catch {
+                            dataFormatada = p.data;
+                          }
+                        }
+                        return (
+                          <TableRow key={p.id + (p.data ? `_${p.data}` : "")}>
+                            <TableCell className="font-semibold">
+                              <span className="text-xs text-muted-foreground font-mono">#{index + 1}</span>
+                            </TableCell>
+                            {quebraPorDia && (
+                              <TableCell className="font-mono text-xs font-semibold text-indigo-700 bg-indigo-50/50">
+                                {dataFormatada || "-"}
+                              </TableCell>
+                            )}
+                            <TableCell className="font-mono text-xs font-semibold">{p.code}</TableCell>
+                            <TableCell className="max-w-[300px] truncate font-medium text-slate-700" title={p.description}>
+                              {p.description}
+                            </TableCell>
+                            <TableCell className="text-right font-semibold text-indigo-600">
+                              {p.totalKg.toLocaleString('pt-BR')} kg
+                            </TableCell>
+                            <TableCell className="text-right text-slate-600">
+                              {p.totalPecas.toLocaleString('pt-BR')} pçs
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <span className={p.quebraPct > 2.5 ? "text-red-500 font-bold" : "text-emerald-500 font-semibold"}>
+                                {p.quebraPct.toFixed(2)}%
+                              </span>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
                     </TableBody>
                   </Table>
                 </div>

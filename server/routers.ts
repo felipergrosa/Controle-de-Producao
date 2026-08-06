@@ -1272,6 +1272,7 @@ export const appRouter = router({
           motivoParadaId: z.number().optional().nullable(),
           productId: z.string().optional().nullable(),
           sortBy: z.string().optional().nullable(),
+          quebraPorDia: z.boolean().optional().nullable(),
         })
       )
       .query(async ({ input }) => {
@@ -1282,6 +1283,7 @@ export const appRouter = router({
           motivoParadaId: input.motivoParadaId,
           productId: input.productId,
           sortBy: input.sortBy,
+          quebraPorDia: input.quebraPorDia,
         });
       }),
     update: protectedProcedure
